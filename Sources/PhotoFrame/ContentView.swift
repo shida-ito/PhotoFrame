@@ -8,7 +8,7 @@ struct ContentView: View {
     @State private var photoItems: [PhotoItem] = []
     @State private var isProcessing = false
     @State private var isDragTargeted = false
-    @State private var selectedItem: PhotoItem?
+    @State private var selectedItems: Set<UUID> = []
     @State private var previewImage: NSImage?
     @State private var isGeneratingPreview = false
     @State private var previewGeneration: Int = 0 
@@ -42,9 +42,9 @@ struct ContentView: View {
     private var mainHStack: some View {
         HStack(spacing: 0) {
             fileListPanel
-                .frame(minWidth: 220, idealWidth: selectedItem != nil ? 260 : 480, maxWidth: selectedItem != nil ? 300 : .infinity)
+                .frame(minWidth: 220, idealWidth: !selectedItems.isEmpty ? 260 : 480, maxWidth: !selectedItems.isEmpty ? 300 : .infinity)
 
-            if selectedItem != nil {
+            if !selectedItems.isEmpty {
                 Divider().background(Color.white.opacity(0.1))
                 previewPanel.frame(minWidth: 300)
             }
@@ -115,9 +115,9 @@ struct ContentView: View {
             Button(action: processSelectedPhoto) {
                 HStack(spacing: 6) {
                     Image(systemName: "selection.pin.in.out").font(.system(size: 12))
-                    Text("Process Sel").font(.system(size: 12, weight: .semibold))
+                    Text("Process Sel (\(selectedItems.count))").font(.system(size: 12, weight: .semibold))
                 }.padding(.horizontal, 14).padding(.vertical, 7).background(Color.white.opacity(0.1)).foregroundColor(.white).clipShape(Capsule())
-            }.buttonStyle(.plain).disabled(isProcessing || selectedItem == nil).opacity(isProcessing || selectedItem == nil ? 0.5 : 1.0)
+            }.buttonStyle(.plain).disabled(isProcessing || selectedItems.isEmpty).opacity(isProcessing || selectedItems.isEmpty ? 0.5 : 1.0)
 
             Button(action: processAllPhotos) {
                 HStack(spacing: 6) {
@@ -130,7 +130,7 @@ struct ContentView: View {
     }
 
     private func photoRow(_ item: PhotoItem) -> some View {
-        let isSelected = selectedItem?.id == item.id
+        let isSelected = selectedItems.contains(item.id)
         return Button(action: { selectItem(item) }) {
             HStack(spacing: 10) {
                 Group {
@@ -161,8 +161,8 @@ struct ContentView: View {
                 Image(systemName: "eye.fill").font(.caption).foregroundColor(.blue.opacity(0.8))
                 Text("Preview").font(.system(size: 14, weight: .semibold, design: .rounded)).foregroundColor(.white.opacity(0.8))
                 Spacer()
-                if let item = selectedItem { Text(item.filename).font(.caption).foregroundColor(.white.opacity(0.4)).lineLimit(1) }
-                Button(action: { selectedItem = nil; previewImage = nil }) { Image(systemName: "xmark.circle.fill").font(.system(size: 14)).foregroundColor(.white.opacity(0.3)) }.buttonStyle(.plain)
+                if let item = photoItems.first(where: { selectedItems.contains($0.id) }) { Text(item.filename).font(.caption).foregroundColor(.white.opacity(0.4)).lineLimit(1) }
+                Button(action: { selectedItems.removeAll(); previewImage = nil }) { Image(systemName: "xmark.circle.fill").font(.system(size: 14)).foregroundColor(.white.opacity(0.3)) }.buttonStyle(.plain)
             }.padding(.horizontal, 16).padding(.vertical, 10)
             Divider().background(Color.white.opacity(0.08))
             ZStack {
@@ -215,15 +215,19 @@ struct ContentView: View {
         guard !photoItems.contains(where: { $0.url == url }) else { return }
         let item = PhotoItem(url: url); photoItems.append(item)
         Task.detached { let thumb = ImageProcessor.generateThumbnail(for: url); await MainActor.run { item.thumbnail = thumb } }
-        if selectedItem == nil { selectItem(item) }
+        if selectedItems.isEmpty { selectItem(item) }
     }
 
-    private func removePhoto(_ item: PhotoItem) { photoItems.removeAll { $0.id == item.id }; if selectedItem?.id == item.id { selectedItem = nil; previewImage = nil } }
-    private func clearPhotos() { photoItems.removeAll(); selectedItem = nil; previewImage = nil }
-    private func selectItem(_ item: PhotoItem) { selectedItem = item; regeneratePreview() }
+    private func removePhoto(_ item: PhotoItem) { photoItems.removeAll { $0.id == item.id }; selectedItems.remove(item.id); if selectedItems.isEmpty { previewImage = nil } }
+    private func clearPhotos() { photoItems.removeAll(); selectedItems.removeAll(); previewImage = nil }
+    private func selectItem(_ item: PhotoItem) { 
+        if selectedItems.contains(item.id) { selectedItems.remove(item.id) }
+        else { selectedItems.insert(item.id) }
+        regeneratePreview() 
+    }
 
     private func regeneratePreview() {
-        guard let item = selectedItem else { return }
+        guard let item = photoItems.first(where: { selectedItems.contains($0.id) }) else { previewImage = nil; return }
         previewGeneration += 1; let currentGen = previewGeneration; isGeneratingPreview = true
         let options = buildOptions(); let inputURL = item.url
         Task.detached {
@@ -252,18 +256,21 @@ struct ContentView: View {
     }
 
     private func processSelectedPhoto() {
-        guard let item = selectedItem, !isProcessing else { return }
+        guard !selectedItems.isEmpty && !isProcessing else { return }
         let p = NSOpenPanel(); p.canChooseDirectories = true; p.canCreateDirectories = true
         guard p.runModal() == .OK, let out = p.url else { return }
         isProcessing = true; let opt = buildOptions()
         Task.detached {
-            await MainActor.run { item.status = .processing }
-            let ourl = out.appendingPathComponent("framed_\(item.filename)")
-            do {
-                try ImageProcessor.process(inputURL: item.url, outputURL: ourl, options: opt)
-                await MainActor.run { item.status = .completed; item.resultURL = ourl }
-            } catch {
-                await MainActor.run { item.status = .failed(error.localizedDescription) }
+            let itemsToProcess = await MainActor.run { photoItems.filter { selectedItems.contains($0.id) } }
+            for item in itemsToProcess {
+                await MainActor.run { item.status = .processing }
+                let ourl = out.appendingPathComponent("framed_\(item.filename)")
+                do {
+                    try ImageProcessor.process(inputURL: item.url, outputURL: ourl, options: opt)
+                    await MainActor.run { item.status = .completed; item.resultURL = ourl }
+                } catch {
+                    await MainActor.run { item.status = .failed(error.localizedDescription) }
+                }
             }
             await MainActor.run { isProcessing = false }
         }
@@ -276,8 +283,10 @@ struct ContentView: View {
         return ImageProcessor.Options(
             effectiveRatio: settings.effectiveRatio, frameColorComponents: (r: fc.redComponent, g: fc.greenComponent, b: fc.blueComponent, a: fc.alphaComponent),
             fontName: settings.fontName, fontSizePercent: settings.fontSizePercent, textColorComponents: (r: tc.redComponent, g: tc.greenComponent, b: tc.blueComponent, a: tc.alphaComponent),
-            showExif: settings.showExif, exifFields: settings.exifFields, paddingRatio: settings.paddingRatio, photoVOffset: settings.photoVOffset,
-            exifVOffset: settings.exifVOffset, exifHAlignment: settings.exifHAlignment, innerPadding: settings.innerPadding
+            showExif: settings.showExif, exifFields: settings.exifFields, paddingRatio: settings.paddingRatio,
+            photoVOffset: settings.photoVOffset, photoHOffset: settings.photoHOffset,
+            exifVOffset: settings.exifVOffset, exifHOffset: settings.exifHOffset,
+            exifHAlignment: settings.exifHAlignment, innerPadding: settings.innerPadding
         )
     }
 }
@@ -315,11 +324,22 @@ struct AlignmentSettings: View {
     @ObservedObject var settings: FrameSettings
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack { Image(systemName: "align.vertical.center").font(.caption).foregroundColor(.blue.opacity(0.8)); Text("Photo Position").font(.system(size: 11, weight: .bold)).foregroundColor(.white.opacity(0.5)).textCase(.uppercase) }
-            HStack(spacing: 12) {
-                Image(systemName: "arrow.up.to.line").font(.caption2).foregroundColor(.white.opacity(0.3))
-                Slider(value: $settings.photoVOffset, in: 0.0...1.0).tint(.blue)
-                Image(systemName: "arrow.down.to.line").font(.caption2).foregroundColor(.white.opacity(0.3))
+            HStack { Image(systemName: "hand.tap.fill").font(.caption).foregroundColor(.blue.opacity(0.8)); Text("Photo Position").font(.system(size: 11, weight: .bold)).foregroundColor(.white.opacity(0.5)).textCase(.uppercase) }
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Vertical").font(.caption2).foregroundColor(.white.opacity(0.4))
+                HStack(spacing: 12) {
+                    Image(systemName: "arrow.up.to.line").font(.caption2).foregroundColor(.white.opacity(0.3))
+                    Slider(value: $settings.photoVOffset, in: 0.0...1.0).tint(.blue)
+                    Image(systemName: "arrow.down.to.line").font(.caption2).foregroundColor(.white.opacity(0.3))
+                }
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Horizontal").font(.caption2).foregroundColor(.white.opacity(0.4))
+                HStack(spacing: 12) {
+                    Image(systemName: "arrow.left.to.line").font(.caption2).foregroundColor(.white.opacity(0.3))
+                    Slider(value: $settings.photoHOffset, in: 0.0...1.0).tint(.blue)
+                    Image(systemName: "arrow.right.to.line").font(.caption2).foregroundColor(.white.opacity(0.3))
+                }
             }
         }
     }
@@ -363,15 +383,25 @@ struct ExifFieldsSettings: View {
                     ExifChip(name: "Shutter", icon: "timer", isOn: $settings.exifFields.showExposureTime)
                     ExifChip(name: "ISO", icon: "speedometer", isOn: $settings.exifFields.showISO)
                 }
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Vertical Position").font(.caption2).foregroundColor(.white.opacity(0.4))
-                    HStack(spacing: 12) {
-                        Image(systemName: "arrow.up.to.line").font(.caption2).foregroundColor(.white.opacity(0.3))
-                        Slider(value: $settings.exifVOffset, in: 0.0...1.0).tint(.blue)
-                        Image(systemName: "arrow.down.to.line").font(.caption2).foregroundColor(.white.opacity(0.3))
+                VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Vertical Position").font(.caption2).foregroundColor(.white.opacity(0.4))
+                        HStack(spacing: 12) {
+                            Image(systemName: "arrow.up.to.line").font(.caption2).foregroundColor(.white.opacity(0.3))
+                            Slider(value: $settings.exifVOffset, in: 0.0...1.0).tint(.blue)
+                            Image(systemName: "arrow.down.to.line").font(.caption2).foregroundColor(.white.opacity(0.3))
+                        }
                     }
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Horizontal Position").font(.caption2).foregroundColor(.white.opacity(0.4))
+                        HStack(spacing: 12) {
+                            Image(systemName: "arrow.left.to.line").font(.caption2).foregroundColor(.white.opacity(0.3))
+                            Slider(value: $settings.exifHOffset, in: 0.0...1.0).tint(.blue)
+                            Image(systemName: "arrow.right.to.line").font(.caption2).foregroundColor(.white.opacity(0.3))
+                        }
+                    }
+                    HStack { Text("Text Align").font(.caption2).foregroundColor(.white.opacity(0.4)); Picker("", selection: $settings.exifHAlignment) { ForEach(ExifHAlignment.allCases) { Text($0.rawValue).tag($0) } }.pickerStyle(.segmented).labelsHidden() }
                 }
-                HStack { Text("Align").font(.caption2).foregroundColor(.white.opacity(0.4)); Picker("", selection: $settings.exifHAlignment) { ForEach(ExifHAlignment.allCases) { Text($0.rawValue).tag($0) } }.pickerStyle(.segmented).labelsHidden() }
             }
         }
     }

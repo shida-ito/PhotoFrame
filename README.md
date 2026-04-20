@@ -9,8 +9,9 @@ Stylish and minimal photo framing application for macOS. Automatically add elega
 - **Batch Processing**: Frame multiple photos at once with consistent settings.
 - **Dynamic Aspect Ratios**: Choose from standard ratios (1:1, 4:5, 3:2, 16:9) or define your own custom ratio.
 - **Granular Layout Control**: 
-    - Use precision sliders to position your photo vertically within the frame.
-    - Adjust the EXIF text overlay position and horizontal alignment (Left, Center, Right).
+    - Use 2D precision sliders to position your photo both **vertically and horizontally** within the frame.
+    - Fully adjustable EXIF text overlay with both vertical/horizontal positioning and text alignment (Left, Center, Right).
+- **Flexible Selection**: Toggle-based multiple selection for selective batch processing.
 - **Custom Typography**: Select from high-quality fonts with real-time typeface previews.
 - **Smart EXIF Overlay**: Toggle specific metadata fields (Camera, Lens, Focal Length, F-Stop, Shutter Speed, ISO).
 - **Pro Aesthetics**: Automatic icon generation and a sleek, modern dark-mode interface.
@@ -38,15 +39,16 @@ Once complete, you will find `PhotoFrame.app` in the project root.
 - **Drag & Drop**: Simply drag JPEG files from Finder and drop them anywhere in the left panel.
 - **Browse**: Click the "+" button or the empty state zone to select files via the file picker.
 
-### 2. Previewing
-- Click on any photo in the list to see a live preview in the center panel. 
+### 2. Selection & Preview
+- **Multi-Selection**: Click on photos in the side panel to toggle them in or out of your selection. A blue highlight indicates selected items.
+- **Preview**: The preview panel shows the first photo in your current selection.
 - Most settings will update the preview instantly, allowing you to fine-tune the look before processing.
 
 ### 3. Configuring Layout
 - **Aspect Ratio**: Select a grid option for the outer frame. If using "Custom", enter the ratio values (e.g., `4:5`).
-- **Photo Position**: Use the slider in the "Positioning" section to move the photo up or down within its designated area.
+- **Photo Position**: Use the Vertical and Horizontal sliders in the "Photo Position" section to offset the image within its designated area.
 - **EXIF Fields**: Toggle which metadata elements you want to display. Each field is represented by an interactive chip.
-- **EXIF Position**: Adjust the vertical position slider to place the text overlay exactly where it fits best on your frame.
+- **EXIF Position**: Adjust the vertical and horizontal position sliders to place the text overlay exactly where it fits best. Use the "Text Align" picker to set internal text justification.
 
 ### 4. Customizing Style
 - **Colors**: Use the color pickers to choose your frame and text colors. White frames with grey text are the classic choice.
@@ -54,8 +56,8 @@ Once complete, you will find `PhotoFrame.app` in the project root.
 - **Text Size**: Scale the EXIF text globally relative to the frame size.
 
 ### 5. Processing
-- **Process Sel**: Click this to process and export only the photo currently selected in the preview.
-- **Process All**: Click this to process all photos in your list.
+- **Process Sel (...)**: Click this to process and export only the photos currently selected in the list (the count is shown in the button).
+- **Process All**: Click this to process every photo in your list, regardless of selection.
 - Select an output directory in the dialog.
 - The app will save your framed photos as new JPEGs prefixed with `framed_`.
 

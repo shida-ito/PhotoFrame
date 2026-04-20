@@ -130,7 +130,9 @@ final class FrameSettings: ObservableObject {
     
     // Positioning
     @Published var photoVOffset: Double = 0.5 // 0.0 = Top, 0.5 = Center, 1.0 = Bottom
+    @Published var photoHOffset: Double = 0.5 // 0.0 = Left, 0.5 = Center, 1.0 = Right
     @Published var exifVOffset: Double = 0.9  // 0.0 = Top, 1.0 = Bottom
+    @Published var exifHOffset: Double = 0.5  // 0.0 = Left, 0.5 = Center, 1.0 = Right
     @Published var exifHAlignment: ExifHAlignment = .center
     @Published var innerPadding: CGFloat = 0.3 // ratio relative to padding
 

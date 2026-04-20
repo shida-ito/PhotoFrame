@@ -20,7 +20,9 @@ struct ImageProcessor {
         let paddingRatio: CGFloat
         
         let photoVOffset: Double
+        let photoHOffset: Double
         let exifVOffset: Double
+        let exifHOffset: Double
         let exifHAlignment: ExifHAlignment
         let innerPadding: CGFloat
     }
@@ -187,21 +189,28 @@ struct ImageProcessor {
         let drawnW = imgW * scale
         let drawnH = imgH * scale
 
-        let imageX = (canvasW - drawnW) / 2.0
+        // Linear interpolation for photo X (0.0 = Left, 1.0 = Right)
+        let minX = padding
+        let maxX = canvasW - padding - drawnW
+        let imageX = minX + (maxX - minX) * options.photoHOffset
         
-        // Linear interpolation for photo Y
-        // 0.0 = Top, 1.0 = Bottom
+        // Linear interpolation for photo Y (0.0 = Top, 1.0 = Bottom)
         let minY = padding + textAreaHeight
         let maxY = canvasH - padding - drawnH
         let imageY = maxY - (maxY - minY) * options.photoVOffset
 
-        // Linear interpolation for EXIF Y
-        // 0.0 = Top, 1.0 = Bottom
+        // Linear interpolation for EXIF Y (0.0 = Top, 1.0 = Bottom)
         let minTextY = padding * 0.5
         let maxTextY = canvasH - padding * 0.5 - textAreaHeight
         let textAreaY = maxTextY - (maxTextY - minTextY) * options.exifVOffset
 
         let imageRect = CGRect(x: imageX, y: imageY, width: drawnW, height: drawnH)
+        
+        // Horizontal offset for EXIF (0.0 = Left, 1.0 = Right)
+        // We'll move the text box based on this. To allow the text to stay within padding,
+        // we interpolate its origin.x between padding and (canvasW - padding - boxWidth).
+        // Since the current box width is canvasW - padding*2, it fills the area.
+        // If the user wants to "move" it, we should probably allow the text origin to shift.
         let textRect = CGRect(
             x: padding,
             y: textAreaY,
@@ -260,7 +269,8 @@ struct ImageProcessor {
                     fontSizePercent: options.fontSizePercent,
                     textColor: options.textColorComponents,
                     canvasHeight: layout.canvasHeight,
-                    hAlignment: options.exifHAlignment
+                    hAlignment: options.exifHAlignment,
+                    hOffset: options.exifHOffset
                 )
             }
         }
@@ -314,7 +324,8 @@ struct ImageProcessor {
         fontSizePercent: CGFloat,
         textColor: (r: CGFloat, g: CGFloat, b: CGFloat, a: CGFloat),
         canvasHeight: Int,
-        hAlignment: ExifHAlignment
+        hAlignment: ExifHAlignment,
+        hOffset: Double
     ) {
         let dynamicFontSize = max(8, CGFloat(canvasHeight) * (fontSizePercent / 100.0))
         let font = NSFont(name: fontName, size: dynamicFontSize) ?? NSFont.systemFont(ofSize: dynamicFontSize)
@@ -336,12 +347,18 @@ struct ImageProcessor {
         let attrString = NSAttributedString(string: text, attributes: attributes)
         let textSize = attrString.size()
 
-        let textX: CGFloat
+        let textX_base: CGFloat
         switch hAlignment {
-        case .left: textX = rect.origin.x
-        case .center: textX = rect.origin.x + (rect.width - textSize.width) / 2.0
-        case .right: textX = rect.origin.x + rect.width - textSize.width
+        case .left: textX_base = rect.origin.x
+        case .center: textX_base = rect.origin.x + (rect.width - textSize.width) / 2.0
+        case .right: textX_base = rect.origin.x + rect.width - textSize.width
         }
+        
+        // Apply granular horizontal offset relative to the full available width
+        // 0.5 is the baseline (no shift from alignment). 0.0 is full left, 1.0 is full right.
+        let maxShift = (rect.width - textSize.width) / 2.0
+        let shift = (CGFloat(hOffset) - 0.5) * 2.0 * maxShift
+        let textX = textX_base + shift
         
         let textY = rect.origin.y + (rect.height - textSize.height) / 2.0
 
