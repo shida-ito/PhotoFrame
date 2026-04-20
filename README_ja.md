@@ -75,6 +75,10 @@ bash build_app.sh
 xattr -cr PhotoFrame.app
 ```
 
+## 📄 ライセンス
+
+このプロジェクトは MIT ライセンスの下で公開されています。詳細は [LICENSE](LICENSE) ファイルをご覧ください。
+
 ---
 
 Developed by [shida-ito](https://github.com/shida-ito)
