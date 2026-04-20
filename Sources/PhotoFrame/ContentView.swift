@@ -105,19 +105,28 @@ struct ContentView: View {
                 Button(action: browseFiles) { Image(systemName: "plus.circle.fill").font(.system(size: 16)) }.buttonStyle(.plain).foregroundColor(.white.opacity(0.5))
                 Text("\(photoItems.count) photo(s)").font(.caption).foregroundColor(.white.opacity(0.5))
                 Spacer()
-                processButton
+                processButtons
             }.padding(.horizontal, 12).padding(.vertical, 8)
         }
     }
 
-    private var processButton: some View {
-        Button(action: processAllPhotos) {
-            HStack(spacing: 6) {
-                if isProcessing { ProgressView().controlSize(.small).tint(.white) }
-                else { Image(systemName: "wand.and.stars").font(.system(size: 12)) }
-                Text(isProcessing ? "Processing…" : "Process All").font(.system(size: 12, weight: .semibold))
-            }.padding(.horizontal, 14).padding(.vertical, 7).background(LinearGradient(colors: [.purple, .blue], startPoint: .leading, endPoint: .trailing)).foregroundColor(.white).clipShape(Capsule())
-        }.buttonStyle(.plain).disabled(isProcessing || photoItems.isEmpty).opacity(isProcessing ? 0.7 : 1.0)
+    private var processButtons: some View {
+        HStack(spacing: 12) {
+            Button(action: processSelectedPhoto) {
+                HStack(spacing: 6) {
+                    Image(systemName: "selection.pin.in.out").font(.system(size: 12))
+                    Text("Process Sel").font(.system(size: 12, weight: .semibold))
+                }.padding(.horizontal, 14).padding(.vertical, 7).background(Color.white.opacity(0.1)).foregroundColor(.white).clipShape(Capsule())
+            }.buttonStyle(.plain).disabled(isProcessing || selectedItem == nil).opacity(isProcessing || selectedItem == nil ? 0.5 : 1.0)
+
+            Button(action: processAllPhotos) {
+                HStack(spacing: 6) {
+                    if isProcessing { ProgressView().controlSize(.small).tint(.white) }
+                    else { Image(systemName: "wand.and.stars").font(.system(size: 12)) }
+                    Text(isProcessing ? "Processing…" : "Process All").font(.system(size: 12, weight: .semibold))
+                }.padding(.horizontal, 14).padding(.vertical, 7).background(LinearGradient(colors: [.purple, .blue], startPoint: .leading, endPoint: .trailing)).foregroundColor(.white).clipShape(Capsule())
+            }.buttonStyle(.plain).disabled(isProcessing || photoItems.isEmpty).opacity(isProcessing ? 0.7 : 1.0)
+        }
     }
 
     private func photoRow(_ item: PhotoItem) -> some View {
@@ -232,10 +241,29 @@ struct ContentView: View {
         guard !isProcessing else { return }; let p = NSOpenPanel(); p.canChooseDirectories = true; p.canCreateDirectories = true
         guard p.runModal() == .OK, let out = p.url else { return }; isProcessing = true; let opt = buildOptions()
         Task.detached {
-            for item in await photoItems {
+            let items = await MainActor.run { photoItems }
+            for item in items {
                 await MainActor.run { item.status = .processing }; let ourl = out.appendingPathComponent("framed_\(item.filename)")
                 do { try ImageProcessor.process(inputURL: item.url, outputURL: ourl, options: opt); await MainActor.run { item.status = .completed; item.resultURL = ourl } }
                 catch { await MainActor.run { item.status = .failed(error.localizedDescription) } }
+            }
+            await MainActor.run { isProcessing = false }
+        }
+    }
+
+    private func processSelectedPhoto() {
+        guard let item = selectedItem, !isProcessing else { return }
+        let p = NSOpenPanel(); p.canChooseDirectories = true; p.canCreateDirectories = true
+        guard p.runModal() == .OK, let out = p.url else { return }
+        isProcessing = true; let opt = buildOptions()
+        Task.detached {
+            await MainActor.run { item.status = .processing }
+            let ourl = out.appendingPathComponent("framed_\(item.filename)")
+            do {
+                try ImageProcessor.process(inputURL: item.url, outputURL: ourl, options: opt)
+                await MainActor.run { item.status = .completed; item.resultURL = ourl }
+            } catch {
+                await MainActor.run { item.status = .failed(error.localizedDescription) }
             }
             await MainActor.run { isProcessing = false }
         }

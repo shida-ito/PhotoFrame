@@ -54,7 +54,8 @@ Once complete, you will find `PhotoFrame.app` in the project root.
 - **Text Size**: Scale the EXIF text globally relative to the frame size.
 
 ### 5. Processing
-- When ready, click the **"Process All"** button.
+- **Process Sel**: Click this to process and export only the photo currently selected in the preview.
+- **Process All**: Click this to process all photos in your list.
 - Select an output directory in the dialog.
 - The app will save your framed photos as new JPEGs prefixed with `framed_`.
 
