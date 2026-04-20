@@ -9,6 +9,7 @@ struct ContentView: View {
     @State private var isProcessing = false
     @State private var isDragTargeted = false
     @State private var selectedItems: Set<UUID> = []
+    @State private var lastSelectedID: UUID? = nil
     @State private var previewImage: NSImage?
     @State private var isGeneratingPreview = false
     @State private var previewGeneration: Int = 0 
@@ -131,7 +132,7 @@ struct ContentView: View {
 
     private func photoRow(_ item: PhotoItem) -> some View {
         let isSelected = selectedItems.contains(item.id)
-        return Button(action: { selectItem(item) }) {
+        return Button(action: { selectItem(item, modifiers: NSEvent.modifierFlags) }) {
             HStack(spacing: 10) {
                 Group {
                     if let thumb = item.thumbnail { Image(nsImage: thumb).resizable().aspectRatio(contentMode: .fill) }
@@ -215,14 +216,32 @@ struct ContentView: View {
         guard !photoItems.contains(where: { $0.url == url }) else { return }
         let item = PhotoItem(url: url); photoItems.append(item)
         Task.detached { let thumb = ImageProcessor.generateThumbnail(for: url); await MainActor.run { item.thumbnail = thumb } }
-        if selectedItems.isEmpty { selectItem(item) }
+        if selectedItems.isEmpty { selectItem(item, modifiers: []) }
     }
 
     private func removePhoto(_ item: PhotoItem) { photoItems.removeAll { $0.id == item.id }; selectedItems.remove(item.id); if selectedItems.isEmpty { previewImage = nil } }
     private func clearPhotos() { photoItems.removeAll(); selectedItems.removeAll(); previewImage = nil }
-    private func selectItem(_ item: PhotoItem) { 
-        if selectedItems.contains(item.id) { selectedItems.remove(item.id) }
-        else { selectedItems.insert(item.id) }
+    private func selectItem(_ item: PhotoItem, modifiers: NSEvent.ModifierFlags) { 
+        if modifiers.contains(.command) {
+            if selectedItems.contains(item.id) {
+                selectedItems.remove(item.id)
+                if lastSelectedID == item.id { lastSelectedID = nil }
+            } else {
+                selectedItems.insert(item.id)
+                lastSelectedID = item.id
+            }
+        } else if modifiers.contains(.shift), let anchorID = lastSelectedID,
+                  let anchorIdx = photoItems.firstIndex(where: { $0.id == anchorID }),
+                  let targetIdx = photoItems.firstIndex(where: { $0.id == item.id }) {
+            let start = min(anchorIdx, targetIdx)
+            let end = max(anchorIdx, targetIdx)
+            for i in start...end {
+                selectedItems.insert(photoItems[i].id)
+            }
+        } else {
+            selectedItems = [item.id]
+            lastSelectedID = item.id
+        }
         regeneratePreview() 
     }
 

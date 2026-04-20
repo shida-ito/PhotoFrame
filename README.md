@@ -11,7 +11,7 @@ Stylish and minimal photo framing application for macOS. Automatically add elega
 - **Granular Layout Control**: 
     - Use 2D precision sliders to position your photo both **vertically and horizontally** within the frame.
     - Fully adjustable EXIF text overlay with both vertical/horizontal positioning and text alignment (Left, Center, Right).
-- **Flexible Selection**: Toggle-based multiple selection for selective batch processing.
+- **Flexible Selection**: Finder-standard multi-selection (Shift+Click, Cmd+Click) for selective batch processing.
 - **Custom Typography**: Select from high-quality fonts with real-time typeface previews.
 - **Smart EXIF Overlay**: Toggle specific metadata fields (Camera, Lens, Focal Length, F-Stop, Shutter Speed, ISO).
 - **Pro Aesthetics**: Automatic icon generation and a sleek, modern dark-mode interface.
@@ -40,7 +40,7 @@ Once complete, you will find `PhotoFrame.app` in the project root.
 - **Browse**: Click the "+" button or the empty state zone to select files via the file picker.
 
 ### 2. Selection & Preview
-- **Multi-Selection**: Click on photos in the side panel to toggle them in or out of your selection. A blue highlight indicates selected items.
+- **Multi-Selection**: Use macOS standard controls to select items in the list (**Click** to select one, **Cmd+Click** to toggle, **Shift+Click** for range selection).
 - **Preview**: The preview panel shows the first photo in your current selection.
 - Most settings will update the preview instantly, allowing you to fine-tune the look before processing.
 
