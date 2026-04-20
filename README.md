@@ -58,6 +58,20 @@ Once complete, you will find `PhotoFrame.app` in the project root.
 - Select an output directory in the dialog.
 - The app will save your framed photos as new JPEGs prefixed with `framed_`.
 
+## 🛡️ Security & Distribution
+
+This application is built as an independent tool and is not signed with an Apple Developer certificate. When running it for the first time on another Mac, you may encounter a macOS Gatekeeper warning.
+
+### How to Open
+1. Locate `PhotoFrame.app` in Finder.
+2. **Right-click (or Control-click)** the app icon and select **Open**.
+3. A dialog will appear asking for confirmation; click **Open**.
+
+Alternatively, if you see a "damaged" warning or it fails to open, you can remove the quarantine attribute via Terminal:
+```bash
+xattr -cr PhotoFrame.app
+```
+
 ---
 
 Developed by [shida-ito](https://github.com/shida-ito)
