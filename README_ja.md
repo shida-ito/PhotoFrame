@@ -3,6 +3,7 @@
 macOS向けのスタイリッシュでミニマルな写真フレーム作成アプリ。写真にエレガントなボーダーとEXIFメタデータのオーバーレイを自動的に追加します。
 
 ![App Icon](PhotoFrame.png)
+![App Screenshot](AppScreenShot.png)
 
 ## 📋 主な機能
 

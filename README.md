@@ -3,6 +3,7 @@
 Stylish and minimal photo framing application for macOS. Automatically add elegant borders and EXIF metadata overlays to your photographs.
 
 ![App Icon](PhotoFrame.png)
+![App Screenshot](AppScreenShot.png)
 
 ## 📋 Features
 
