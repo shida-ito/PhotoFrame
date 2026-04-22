@@ -1,6 +1,6 @@
 # PhotoFrame
 
-Stylish and minimal photo framing application for macOS. Automatically add elegant borders and EXIF metadata overlays to your photographs.
+Stylish and minimal photo framing application for macOS. Add elegant borders and customizable EXIF-based text overlays to your photographs.
 
 ![App Icon](PhotoFrame.png)
 ![App Screenshot](AppScreenShot.png)
@@ -8,14 +8,19 @@ Stylish and minimal photo framing application for macOS. Automatically add elega
 ## 📋 Features
 
 - **Batch Processing**: Frame multiple photos at once with consistent settings.
-- **Dynamic Aspect Ratios**: Choose from standard ratios (1:1, 4:5, 3:2, 16:9) or define your own custom ratio.
-- **Granular Layout Control**: 
-    - Use 2D precision sliders to position your photo both **vertically and horizontally** within the frame.
-    - Fully adjustable EXIF text overlay with both vertical/horizontal positioning and text alignment (Left, Center, Right).
-- **Flexible Selection**: Finder-standard multi-selection (Shift+Click, Cmd+Click) for selective batch processing.
-- **Custom Typography**: Select from high-quality fonts with real-time typeface previews.
-- **Smart EXIF Overlay**: Toggle specific metadata fields (Camera, Lens, Focal Length, F-Stop, Shutter Speed, ISO).
-- **Pro Aesthetics**: Automatic icon generation and a sleek, modern dark-mode interface.
+- **Flexible Frame Layout**: Choose from standard ratios (1:1, 4:5, 3:2, 16:9, and more) or define your own custom ratio.
+- **Granular Position Control**:
+    - Use precision sliders to position the photo both **vertically and horizontally** inside the frame.
+    - Adjust frame width from `0` upward for anything from borderless layouts to wide margins.
+- **Text Layers**:
+    - Add multiple text layers.
+    - Use EXIF tags such as `{Camera}`, `{Lens}`, `{Focal}`, `{FStop}`, `{Shutter}`, `{ISO}`, and `{Date}` inside each template.
+    - Control font, color, size, X/Y position, alignment, and visibility per layer.
+- **Fast Interactive Preview**: Cached previews and live text overlays keep text editing and positioning responsive.
+- **Preset Management**: Save, rename, delete, and clear reusable layout presets.
+- **Flexible Selection**: Finder-standard multi-selection (`Shift+Click`, `Cmd+Click`) for selective batch processing.
+- **Preferences**: Choose the UI language (English / Japanese) and switch the font picker between `Search` and `Full List` modes.
+- **Multi-Window Workflow**: Open multiple windows to work on different photo sets in parallel.
 
 ## 🚀 Getting Started
 
@@ -43,18 +48,28 @@ Once complete, you will find `PhotoFrame.app` in the project root.
 ### 2. Selection & Preview
 - **Multi-Selection**: Use macOS standard controls to select items in the list (**Click** to select one, **Cmd+Click** to toggle, **Shift+Click** for range selection).
 - **Preview**: The preview panel shows the first photo in your current selection.
-- Most settings will update the preview instantly, allowing you to fine-tune the look before processing.
+- Most settings update the preview instantly, allowing you to fine-tune the look before processing.
+- **Preview Quality**: Use the quality picker in the settings panel to trade speed for detail.
+- **Multiple Windows**: Use **File > New Window** or `Cmd+N` to open another working window.
 
-### 3. Configuring Layout
+### 3. Configuring Frame & Text
 - **Aspect Ratio**: Select a grid option for the outer frame. If using "Custom", enter the ratio values (e.g., `4:5`).
 - **Photo Position**: Use the Vertical and Horizontal sliders in the "Photo Position" section to offset the image within its designated area.
-- **EXIF Fields**: Toggle which metadata elements you want to display. Each field is represented by an interactive chip.
-- **EXIF Position**: Adjust the vertical and horizontal position sliders to place the text overlay exactly where it fits best. Use the "Text Align" picker to set internal text justification.
+- **Frame Width**: Adjust the amount of space around the image. Set it to `0` for a borderless edge.
+- **Text Layers**:
+    - Add one or more layers in the "Text Layers" section.
+    - Enter a template such as `{Camera} • {Lens}`.
+    - Change font, color, text size, X/Y position, and alignment for each layer.
+    - Toggle visibility with the eye icon, or remove a layer entirely.
+- **Available Tags**: `{Camera}`, `{Lens}`, `{Focal}`, `{FStop}`, `{Shutter}`, `{ISO}`, `{Date}`.
 
-### 4. Customizing Style
-- **Colors**: Use the color pickers to choose your frame and text colors. White frames with grey text are the classic choice.
-- **Font**: Choose a font from the dropdown. Each entry shows the actual typeface to help your selection.
-- **Text Size**: Scale the EXIF text globally relative to the frame size.
+### 4. Presets & Preferences
+- **Save Preset**: Save the current layout from the preset menu in the settings header.
+- **Rename Preset**: Open a saved preset entry and choose **Rename Preset...**.
+- **Delete Preset**: Remove a single preset or clear them all from the same menu.
+- **Preferences**: Open **PhotoFrame > Settings...** to:
+    - switch the display language between English and Japanese
+    - choose the font picker mode: `Search` or `Full List`
 
 ### 5. Processing
 - **Process Sel (...)**: Click this to process and export only the photos currently selected in the list (the count is shown in the button).

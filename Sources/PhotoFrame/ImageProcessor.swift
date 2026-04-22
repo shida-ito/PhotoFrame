@@ -9,22 +9,130 @@ struct ImageProcessor {
 
     // MARK: - Public API
 
+    struct TextLayerOptions: Sendable {
+        let id: UUID
+        let textTemplate: String
+        let fontName: String
+        let fontSizePercent: CGFloat
+        let textColorComponents: (r: CGFloat, g: CGFloat, b: CGFloat, a: CGFloat)
+        let hOffset: Double
+        let vOffset: Double
+        let hAlignment: ExifHAlignment
+        let isVisible: Bool
+    }
+
     struct Options: Sendable {
         let effectiveRatio: CGFloat?  // nil = original ratio
         let frameColorComponents: (r: CGFloat, g: CGFloat, b: CGFloat, a: CGFloat)
-        let fontName: String
-        let fontSizePercent: CGFloat  // percentage of canvas height
-        let textColorComponents: (r: CGFloat, g: CGFloat, b: CGFloat, a: CGFloat)
-        let showExif: Bool
-        let exifFields: ExifFieldSelection
         let paddingRatio: CGFloat
         
         let photoVOffset: Double
         let photoHOffset: Double
-        let exifVOffset: Double
-        let exifHOffset: Double
-        let exifHAlignment: ExifHAlignment
         let innerPadding: CGFloat
+        
+        let textLayers: [TextLayerOptions]
+    }
+
+    struct PreviewTextLayer: Identifiable {
+        let id: UUID
+        let text: String
+        let fontName: String
+        let fontSize: CGFloat
+        let textColorComponents: (r: CGFloat, g: CGFloat, b: CGFloat, a: CGFloat)
+        let origin: CGPoint
+        let size: CGSize
+    }
+
+    private struct TextLayoutCacheKey: Hashable {
+        let text: String
+        let fontName: String
+        let fontSizeBits: UInt64
+        let redBits: UInt64
+        let greenBits: UInt64
+        let blueBits: UInt64
+        let alphaBits: UInt64
+        let alignment: ExifHAlignment
+    }
+
+    private struct TextLayoutCacheEntry {
+        let attributedString: NSAttributedString
+        let size: CGSize
+    }
+
+    private struct ResolvedTextLayout {
+        let cachedLayout: TextLayoutCacheEntry
+        let fontSize: CGFloat
+        let origin: CGPoint
+    }
+
+    private final class TextLayoutCache: @unchecked Sendable {
+        static let shared = TextLayoutCache()
+
+        private let lock = NSLock()
+        private var storage: [TextLayoutCacheKey: TextLayoutCacheEntry] = [:]
+        private let maxEntries = 256
+
+        func entry(
+            text: String,
+            fontName: String,
+            fontSize: CGFloat,
+            textColor: (r: CGFloat, g: CGFloat, b: CGFloat, a: CGFloat),
+            alignment: ExifHAlignment
+        ) -> TextLayoutCacheEntry {
+            let key = TextLayoutCacheKey(
+                text: text,
+                fontName: fontName,
+                fontSizeBits: Double(fontSize).bitPattern,
+                redBits: Double(textColor.r).bitPattern,
+                greenBits: Double(textColor.g).bitPattern,
+                blueBits: Double(textColor.b).bitPattern,
+                alphaBits: Double(textColor.a).bitPattern,
+                alignment: alignment
+            )
+
+            lock.lock()
+            if let cached = storage[key] {
+                lock.unlock()
+                return cached
+            }
+            lock.unlock()
+
+            let font = NSFont(name: fontName, size: fontSize) ?? NSFont.systemFont(ofSize: fontSize)
+            let color = NSColor(
+                red: textColor.r,
+                green: textColor.g,
+                blue: textColor.b,
+                alpha: textColor.a
+            )
+
+            let paragraphStyle = NSMutableParagraphStyle()
+            switch alignment {
+            case .left: paragraphStyle.alignment = .left
+            case .center: paragraphStyle.alignment = .center
+            case .right: paragraphStyle.alignment = .right
+            }
+
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: color,
+                .paragraphStyle: paragraphStyle,
+            ]
+
+            let attributedString = NSAttributedString(string: text, attributes: attributes)
+            let entry = TextLayoutCacheEntry(
+                attributedString: attributedString,
+                size: attributedString.size()
+            )
+
+            lock.lock()
+            if storage.count >= maxEntries {
+                storage.removeAll(keepingCapacity: true)
+            }
+            storage[key] = entry
+            lock.unlock()
+
+            return entry
+        }
     }
 
     /// Process a single image file and write the result to `outputURL`.
@@ -145,8 +253,8 @@ struct ImageProcessor {
         let canvasWidth: Int
         let canvasHeight: Int
         let imageRect: CGRect // where the photo is drawn on the canvas
-        let textRect: CGRect  // where the EXIF text goes
         let padding: CGFloat
+        let textAreaHeight: CGFloat
     }
 
     static func calculateLayout(
@@ -158,13 +266,16 @@ struct ImageProcessor {
         let imgH = CGFloat(imageHeight)
         let largerDim = max(imgW, imgH)
         let padding = floor(largerDim * options.paddingRatio)
+        let textAreaHeight = padding * 1.2
+        let sideMargin = padding + textAreaHeight // Unified margin for all 4 sides
 
         let canvasW: CGFloat
         let canvasH: CGFloat
 
         if let targetRatio = options.effectiveRatio {
-            let minCanvasW = imgW + padding * 2
-            let minCanvasH = imgH + padding * 3
+            // Apply unified margin to both dimensions
+            let minCanvasW = imgW + sideMargin * 2
+            let minCanvasH = imgH + sideMargin * 2
 
             if minCanvasW / minCanvasH > targetRatio {
                 canvasW = minCanvasW
@@ -174,13 +285,12 @@ struct ImageProcessor {
                 canvasW = canvasH * targetRatio
             }
         } else {
-            canvasW = imgW + padding * 2
-            canvasH = imgH + padding * 3
+            canvasW = imgW + sideMargin * 2
+            canvasH = imgH + sideMargin * 2
         }
 
-        let textAreaHeight = padding * 1.2 // slightly more room for alignment
-        let availableH = canvasH - padding * 2 - textAreaHeight
-        let availableW = canvasW - padding * 2
+        let availableH = canvasH - sideMargin * 2
+        let availableW = canvasW - sideMargin * 2
 
         let scaleW = availableW / imgW
         let scaleH = availableH / imgH
@@ -189,41 +299,21 @@ struct ImageProcessor {
         let drawnW = imgW * scale
         let drawnH = imgH * scale
 
-        // Linear interpolation for photo X (0.0 = Left, 1.0 = Right)
-        let minX = padding
-        let maxX = canvasW - padding - drawnW
-        let imageX = minX + (maxX - minX) * options.photoHOffset
+        // Symmetric centering within the sideMargin bounds
+        let leewayX = canvasW - drawnW - sideMargin * 2
+        let imageX = sideMargin + leewayX * options.photoHOffset
         
-        // Linear interpolation for photo Y (0.0 = Top, 1.0 = Bottom)
-        let minY = padding + textAreaHeight
-        let maxY = canvasH - padding - drawnH
-        let imageY = maxY - (maxY - minY) * options.photoVOffset
-
-        // Linear interpolation for EXIF Y (0.0 = Top, 1.0 = Bottom)
-        let minTextY = padding * 0.5
-        let maxTextY = canvasH - padding * 0.5 - textAreaHeight
-        let textAreaY = maxTextY - (maxTextY - minTextY) * options.exifVOffset
+        let leewayY = canvasH - drawnH - sideMargin * 2
+        let imageY = sideMargin + leewayY * (1.0 - options.photoVOffset)
 
         let imageRect = CGRect(x: imageX, y: imageY, width: drawnW, height: drawnH)
         
-        // Horizontal offset for EXIF (0.0 = Left, 1.0 = Right)
-        // We'll move the text box based on this. To allow the text to stay within padding,
-        // we interpolate its origin.x between padding and (canvasW - padding - boxWidth).
-        // Since the current box width is canvasW - padding*2, it fills the area.
-        // If the user wants to "move" it, we should probably allow the text origin to shift.
-        let textRect = CGRect(
-            x: padding,
-            y: textAreaY,
-            width: canvasW - padding * 2,
-            height: textAreaHeight
-        )
-
         return Layout(
             canvasWidth: Int(ceil(canvasW)),
             canvasHeight: Int(ceil(canvasH)),
             imageRect: imageRect,
-            textRect: textRect,
-            padding: padding
+            padding: padding,
+            textAreaHeight: textAreaHeight
         )
     }
 
@@ -233,6 +323,16 @@ struct ImageProcessor {
         cgImage: CGImage,
         orientation: CGImagePropertyOrientation,
         exifInfo: ExifInfo,
+        layout: Layout,
+        options: Options
+    ) throws -> CGImage {
+        let background = try renderBackground(cgImage: cgImage, orientation: orientation, layout: layout, options: options)
+        return try renderTextLayers(backgroundImage: background, exifInfo: exifInfo, layout: layout, options: options)
+    }
+
+    static func renderBackground(
+        cgImage: CGImage,
+        orientation: CGImagePropertyOrientation,
         layout: Layout,
         options: Options
     ) throws -> CGImage {
@@ -258,19 +358,43 @@ struct ImageProcessor {
         context.draw(cgImage, in: layout.imageRect)
         context.restoreGState()
 
-        if options.showExif {
-            let text = exifInfo.summaryLine(fields: options.exifFields)
+        guard let result = context.makeImage() else {
+            throw ProcessingError.cannotRenderImage
+        }
+        return result
+    }
+
+    static func renderTextLayers(
+        backgroundImage: CGImage,
+        exifInfo: ExifInfo,
+        layout: Layout,
+        options: Options
+    ) throws -> CGImage {
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(
+            data: nil,
+            width: layout.canvasWidth,
+            height: layout.canvasHeight,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            throw ProcessingError.cannotCreateContext
+        }
+
+        // Draw cached background
+        context.draw(backgroundImage, in: CGRect(x: 0, y: 0, width: layout.canvasWidth, height: layout.canvasHeight))
+
+        for layer in options.textLayers {
+            guard layer.isVisible else { continue }
+            let text = exifInfo.format(template: layer.textTemplate)
             if !text.isEmpty {
                 drawText(
                     context: context,
                     text: text,
-                    in: layout.textRect,
-                    fontName: options.fontName,
-                    fontSizePercent: options.fontSizePercent,
-                    textColor: options.textColorComponents,
-                    canvasHeight: layout.canvasHeight,
-                    hAlignment: options.exifHAlignment,
-                    hOffset: options.exifHOffset
+                    layout: layout,
+                    layerOptions: layer
                 )
             }
         }
@@ -279,6 +403,34 @@ struct ImageProcessor {
             throw ProcessingError.cannotRenderImage
         }
         return result
+    }
+
+    static func previewTextLayers(
+        exifInfo: ExifInfo,
+        layout: Layout,
+        options: Options
+    ) -> [PreviewTextLayer] {
+        options.textLayers.compactMap { layer in
+            guard layer.isVisible else { return nil }
+            let text = exifInfo.format(template: layer.textTemplate)
+            guard !text.isEmpty else { return nil }
+
+            let resolved = resolveTextLayout(
+                text: text,
+                layout: layout,
+                layerOptions: layer
+            )
+
+            return PreviewTextLayer(
+                id: layer.id,
+                text: text,
+                fontName: layer.fontName,
+                fontSize: resolved.fontSize,
+                textColorComponents: layer.textColorComponents,
+                origin: resolved.origin,
+                size: resolved.cachedLayout.size
+            )
+        }
     }
 
     static func applyOrientationTransform(context: CGContext, orientation: CGImagePropertyOrientation, drawRect: CGRect) {
@@ -319,54 +471,63 @@ struct ImageProcessor {
     static func drawText(
         context: CGContext,
         text: String,
-        in rect: CGRect,
-        fontName: String,
-        fontSizePercent: CGFloat,
-        textColor: (r: CGFloat, g: CGFloat, b: CGFloat, a: CGFloat),
-        canvasHeight: Int,
-        hAlignment: ExifHAlignment,
-        hOffset: Double
+        layout: Layout,
+        layerOptions: TextLayerOptions
     ) {
-        let dynamicFontSize = max(8, CGFloat(canvasHeight) * (fontSizePercent / 100.0))
-        let font = NSFont(name: fontName, size: dynamicFontSize) ?? NSFont.systemFont(ofSize: dynamicFontSize)
-        let color = NSColor(red: textColor.r, green: textColor.g, blue: textColor.b, alpha: textColor.a)
-
-        let paragraphStyle = NSMutableParagraphStyle()
-        switch hAlignment {
-        case .left: paragraphStyle.alignment = .left
-        case .center: paragraphStyle.alignment = .center
-        case .right: paragraphStyle.alignment = .right
-        }
-
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .foregroundColor: color,
-            .paragraphStyle: paragraphStyle,
-        ]
-
-        let attrString = NSAttributedString(string: text, attributes: attributes)
-        let textSize = attrString.size()
-
-        let textX_base: CGFloat
-        switch hAlignment {
-        case .left: textX_base = rect.origin.x
-        case .center: textX_base = rect.origin.x + (rect.width - textSize.width) / 2.0
-        case .right: textX_base = rect.origin.x + rect.width - textSize.width
-        }
-        
-        // Apply granular horizontal offset relative to the full available width
-        // 0.5 is the baseline (no shift from alignment). 0.0 is full left, 1.0 is full right.
-        let maxShift = (rect.width - textSize.width) / 2.0
-        let shift = (CGFloat(hOffset) - 0.5) * 2.0 * maxShift
-        let textX = textX_base + shift
-        
-        let textY = rect.origin.y + (rect.height - textSize.height) / 2.0
+        let resolved = resolveTextLayout(
+            text: text,
+            layout: layout,
+            layerOptions: layerOptions
+        )
 
         let nsContext = NSGraphicsContext(cgContext: context, flipped: false)
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = nsContext
-        attrString.draw(at: NSPoint(x: textX, y: textY))
+        resolved.cachedLayout.attributedString.draw(at: NSPoint(x: resolved.origin.x, y: resolved.origin.y))
         NSGraphicsContext.restoreGraphicsState()
+    }
+
+    private static func resolveTextLayout(
+        text: String,
+        layout: Layout,
+        layerOptions: TextLayerOptions
+    ) -> ResolvedTextLayout {
+        let canvasW = CGFloat(layout.canvasWidth)
+        let canvasH = CGFloat(layout.canvasHeight)
+        let dynamicFontSize = max(8, canvasH * (layerOptions.fontSizePercent / 100.0))
+        let tc = layerOptions.textColorComponents
+        let cachedLayout = TextLayoutCache.shared.entry(
+            text: text,
+            fontName: layerOptions.fontName,
+            fontSize: dynamicFontSize,
+            textColor: tc,
+            alignment: layerOptions.hAlignment
+        )
+        let textSize = cachedLayout.size
+
+        let rectWidth = canvasW - layout.padding * 2
+        let rectOriginX = layout.padding
+
+        let textXBase: CGFloat
+        switch layerOptions.hAlignment {
+        case .left: textXBase = rectOriginX
+        case .center: textXBase = rectOriginX + (rectWidth - textSize.width) / 2.0
+        case .right: textXBase = rectOriginX + rectWidth - textSize.width
+        }
+
+        let maxShift = (rectWidth - textSize.width) / 2.0
+        let shift = (CGFloat(layerOptions.hOffset) - 0.5) * 2.0 * maxShift
+        let textX = textXBase + shift
+
+        let minTextY = layout.padding * 0.5
+        let maxTextY = canvasH - layout.padding * 0.5 - textSize.height
+        let textY = maxTextY - (maxTextY - minTextY) * layerOptions.vOffset
+
+        return ResolvedTextLayout(
+            cachedLayout: cachedLayout,
+            fontSize: dynamicFontSize,
+            origin: CGPoint(x: textX, y: textY)
+        )
     }
 
     static func saveJPEG(image: CGImage, to url: URL, quality: CGFloat) throws {
