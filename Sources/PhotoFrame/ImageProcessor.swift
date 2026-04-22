@@ -447,6 +447,30 @@ struct ImageProcessor {
         )
     }
 
+    static func scaledLayout(
+        _ layout: Layout,
+        maxLongEdge: Int?
+    ) -> Layout {
+        guard let maxLongEdge else { return layout }
+
+        let currentLongEdge = max(layout.canvasWidth, layout.canvasHeight)
+        guard currentLongEdge > maxLongEdge else { return layout }
+
+        let scale = CGFloat(maxLongEdge) / CGFloat(currentLongEdge)
+        return Layout(
+            canvasWidth: max(Int((CGFloat(layout.canvasWidth) * scale).rounded()), 1),
+            canvasHeight: max(Int((CGFloat(layout.canvasHeight) * scale).rounded()), 1),
+            imageRect: CGRect(
+                x: layout.imageRect.minX * scale,
+                y: layout.imageRect.minY * scale,
+                width: layout.imageRect.width * scale,
+                height: layout.imageRect.height * scale
+            ),
+            padding: layout.padding * scale,
+            textAreaHeight: layout.textAreaHeight * scale
+        )
+    }
+
     // MARK: - Rendering
 
     static func render(
@@ -503,6 +527,42 @@ struct ImageProcessor {
         return result
     }
 
+    static func renderFrameBackground(
+        layout: Layout,
+        options: Options
+    ) throws -> CGImage {
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(
+            data: nil,
+            width: layout.canvasWidth,
+            height: layout.canvasHeight,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            throw ProcessingError.cannotCreateContext
+        }
+
+        let fc = options.frameColorComponents
+        context.setFillColor(red: fc.r, green: fc.g, blue: fc.b, alpha: fc.a)
+        context.fill(CGRect(x: 0, y: 0, width: layout.canvasWidth, height: layout.canvasHeight))
+
+        if options.photoBorderEnabled {
+            strokePhotoBorder(
+                context: context,
+                imageRect: layout.imageRect,
+                color: options.photoBorderColorComponents,
+                widthPercent: options.photoBorderWidthPercent
+            )
+        }
+
+        guard let result = context.makeImage() else {
+            throw ProcessingError.cannotRenderImage
+        }
+        return result
+    }
+
     static func renderTextLayers(
         backgroundImage: CGImage,
         exifInfo: ExifInfo,
@@ -524,6 +584,104 @@ struct ImageProcessor {
 
         // Draw cached background
         context.draw(backgroundImage, in: CGRect(x: 0, y: 0, width: layout.canvasWidth, height: layout.canvasHeight))
+
+        for layer in options.textLayers {
+            guard layer.isVisible else { continue }
+            let text = exifInfo.format(template: layer.textTemplate)
+            if !text.isEmpty {
+                drawText(
+                    context: context,
+                    text: text,
+                    layout: layout,
+                    layerOptions: layer
+                )
+            }
+        }
+
+        guard let result = context.makeImage() else {
+            throw ProcessingError.cannotRenderImage
+        }
+        return result
+    }
+
+    static func renderTextOverlay(
+        exifInfo: ExifInfo,
+        layout: Layout,
+        options: Options
+    ) throws -> CGImage {
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(
+            data: nil,
+            width: layout.canvasWidth,
+            height: layout.canvasHeight,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            throw ProcessingError.cannotCreateContext
+        }
+
+        context.clear(CGRect(x: 0, y: 0, width: layout.canvasWidth, height: layout.canvasHeight))
+
+        for layer in options.textLayers {
+            guard layer.isVisible else { continue }
+            let text = exifInfo.format(template: layer.textTemplate)
+            if !text.isEmpty {
+                drawText(
+                    context: context,
+                    text: text,
+                    layout: layout,
+                    layerOptions: layer
+                )
+            }
+        }
+
+        guard let result = context.makeImage() else {
+            throw ProcessingError.cannotRenderImage
+        }
+        return result
+    }
+
+    static func renderVideoOverlay(
+        exifInfo: ExifInfo,
+        layout: Layout,
+        options: Options
+    ) throws -> CGImage {
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(
+            data: nil,
+            width: layout.canvasWidth,
+            height: layout.canvasHeight,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            throw ProcessingError.cannotCreateContext
+        }
+
+        context.clear(CGRect(x: 0, y: 0, width: layout.canvasWidth, height: layout.canvasHeight))
+
+        let framePath = CGMutablePath()
+        framePath.addRect(CGRect(x: 0, y: 0, width: layout.canvasWidth, height: layout.canvasHeight))
+        framePath.addRect(layout.imageRect)
+
+        let fc = options.frameColorComponents
+        context.saveGState()
+        context.addPath(framePath)
+        context.setFillColor(red: fc.r, green: fc.g, blue: fc.b, alpha: fc.a)
+        context.drawPath(using: .eoFill)
+        context.restoreGState()
+
+        if options.photoBorderEnabled {
+            strokePhotoBorder(
+                context: context,
+                imageRect: layout.imageRect,
+                color: options.photoBorderColorComponents,
+                widthPercent: options.photoBorderWidthPercent
+            )
+        }
 
         for layer in options.textLayers {
             guard layer.isVisible else { continue }
@@ -669,22 +827,33 @@ struct ImageProcessor {
         )
     }
 
+    static func photoBorderMetrics(
+        for imageRect: CGRect,
+        widthPercent: CGFloat
+    ) -> (rect: CGRect, lineWidth: CGFloat)? {
+        let borderWidth = photoBorderWidth(for: imageRect, widthPercent: widthPercent)
+        let inset = borderWidth / 2.0
+        let strokeRect = imageRect.insetBy(dx: -inset, dy: -inset)
+
+        guard strokeRect.width > 0, strokeRect.height > 0 else { return nil }
+        return (strokeRect, borderWidth)
+    }
+
     private static func strokePhotoBorder(
         context: CGContext,
         imageRect: CGRect,
         color: (r: CGFloat, g: CGFloat, b: CGFloat, a: CGFloat),
         widthPercent: CGFloat
     ) {
-        let borderWidth = photoBorderWidth(for: imageRect, widthPercent: widthPercent)
-        let inset = borderWidth / 2.0
-        let strokeRect = imageRect.insetBy(dx: -inset, dy: -inset)
-
-        guard strokeRect.width > 0, strokeRect.height > 0 else { return }
+        guard let borderMetrics = photoBorderMetrics(
+            for: imageRect,
+            widthPercent: widthPercent
+        ) else { return }
 
         context.saveGState()
         context.setStrokeColor(red: color.r, green: color.g, blue: color.b, alpha: color.a)
-        context.setLineWidth(borderWidth)
-        context.stroke(strokeRect)
+        context.setLineWidth(borderMetrics.lineWidth)
+        context.stroke(borderMetrics.rect)
         context.restoreGState()
     }
 

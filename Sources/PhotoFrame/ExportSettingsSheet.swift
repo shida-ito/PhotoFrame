@@ -10,6 +10,8 @@ struct ExportSettingsSheet: View {
     @Binding var customLongEdge: Int
     @Binding var filenamePrefix: String
     @Binding var copyMetadata: Bool
+    let containsImageItems: Bool
+    let containsVideoItems: Bool
     let onConfirm: () -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -28,17 +30,19 @@ struct ExportSettingsSheet: View {
             }
 
             VStack(alignment: .leading, spacing: 14) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(L10n.exportFormat(language))
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Picker("", selection: $format) {
-                        ForEach(ExportFormat.allCases) { exportFormat in
-                            Text(exportFormat.title(language)).tag(exportFormat)
+                if containsImageItems {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(L10n.exportFormat(language))
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Picker("", selection: $format) {
+                            ForEach(ExportFormat.allCases) { exportFormat in
+                                Text(exportFormat.title(language)).tag(exportFormat)
+                            }
                         }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
                     }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
                 }
 
                 VStack(alignment: .leading, spacing: 6) {
@@ -73,7 +77,13 @@ struct ExportSettingsSheet: View {
 
                 Toggle(L10n.copyMetadata(language), isOn: $copyMetadata)
 
-                if format == .jpeg {
+                if containsVideoItems {
+                    Text(L10n.videoExportNote(language))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                if containsImageItems && format == .jpeg {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
                             Text(L10n.jpegQuality(language))

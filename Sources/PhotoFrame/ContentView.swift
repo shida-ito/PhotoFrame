@@ -6,6 +6,10 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     private static var hasRestoredWorkspaceInProcess = false
 
+    private enum FocusPane: Hashable {
+        case photoList
+    }
+
     private struct ClearUndoSnapshot {
         let photoGroups: [PhotoGroup]
         let selectedGroupID: UUID?
@@ -36,6 +40,7 @@ struct ContentView: View {
     @State private var isApplyingGroupSettings = false
     @State private var isRestoringWorkspace = false
     @State private var lastClearedSnapshot: ClearUndoSnapshot? = nil
+    @FocusState private var focusedPane: FocusPane?
     
     @AppStorage("userPresets") private var presetsData: Data = Data()
     @AppStorage("workspaceData") private var workspaceData: Data = Data()
@@ -76,6 +81,12 @@ struct ContentView: View {
 
     private var allPhotoItems: [PhotoItem] {
         photoGroups.flatMap(\.photoItems)
+    }
+
+    private var expandedPhotoItems: [PhotoItem] {
+        photoGroups.flatMap { group in
+            group.isExpanded ? group.photoItems : []
+        }
     }
 
     private var defaultGroupIndex: Int? {
@@ -165,6 +176,7 @@ struct ContentView: View {
             schedulePreviewRegeneration()
         }
         .sheet(item: $activeExportScope) { scope in
+            let scopedItems = exportItems(for: scope)
             ExportSettingsSheet(
                 scope: scope,
                 itemCount: exportItemCount(for: scope),
@@ -175,6 +187,8 @@ struct ContentView: View {
                 customLongEdge: $exportCustomLongEdge,
                 filenamePrefix: $exportFilenamePrefix,
                 copyMetadata: $exportCopyMetadata,
+                containsImageItems: scopedItems.contains(where: { !$0.item.mediaKind.isVideo }),
+                containsVideoItems: scopedItems.contains(where: { $0.item.mediaKind.isVideo }),
                 onConfirm: { confirmExport(scope) }
             )
         }
@@ -338,6 +352,14 @@ struct ContentView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
         }
+        .contentShape(Rectangle())
+        .focusable()
+        .focusEffectDisabled()
+        .focused($focusedPane, equals: .photoList)
+        .onTapGesture {
+            focusedPane = .photoList
+        }
+        .onMoveCommand(perform: movePhotoSelection)
     }
 
     private var processButtons: some View {
@@ -495,13 +517,31 @@ struct ContentView: View {
             Divider().background(theme.divider)
             ZStack {
                 theme.previewSurface
-                if let preview = previewImage {
-                    LivePreviewCanvas(
-                        image: preview,
-                        textLayers: currentPreviewTextLayers
-                    )
+                if let preview = previewImage,
+                   let previewItem = currentPreviewItem {
+                    Group {
+                        if previewItem.mediaKind.isVideo,
+                           let layout = currentPreviewLayout {
+                            LiveVideoPreviewCanvas(
+                                backgroundImage: preview,
+                                videoURL: previewItem.url,
+                                imageRect: layout.imageRect,
+                                textLayers: currentPreviewTextLayers
+                            )
+                        } else {
+                            LivePreviewCanvas(
+                                image: preview,
+                                textLayers: currentPreviewTextLayers
+                            )
+                        }
+                    }
                     .padding(20)
-                    .shadow(color: .black.opacity(0.5), radius: 20, x: 0, y: 8)
+                    .shadow(
+                        color: previewItem.mediaKind.isVideo ? .clear : .black.opacity(0.5),
+                        radius: previewItem.mediaKind.isVideo ? 0 : 20,
+                        x: 0,
+                        y: previewItem.mediaKind.isVideo ? 0 : 8
+                    )
                 } else if !isGeneratingPreview {
                     Text(L10n.selectPhotoToPreview(language)).font(.caption).foregroundColor(.white.opacity(0.3))
                 }
@@ -740,9 +780,35 @@ struct ContentView: View {
 
     private func startLoadingAssets(for item: PhotoItem, url: URL) {
         Task.detached {
+            if item.mediaKind.isVideo {
+                let maxDim = await self.previewMaxDim
+                let previewData = try? await VideoProcessor.loadPreviewData(
+                    from: url,
+                    maxDim: CGFloat(max(maxDim, 240))
+                )
+
+                await MainActor.run {
+                    if let previewData {
+                        item.thumbnail = NSImage(
+                            cgImage: previewData.posterImage,
+                            size: NSSize(
+                                width: previewData.posterImage.width,
+                                height: previewData.posterImage.height
+                            )
+                        )
+                        item.cachedPreviewImage = previewData.posterImage
+                        item.cachedExifInfo = previewData.exifInfo
+                        item.cachedOrientation = .up
+                        item.cachedOrientedSize = previewData.orientedSize
+                        item.cachedVideoDuration = previewData.durationSeconds
+                    }
+                }
+                return
+            }
+
             let thumb = ImageProcessor.generateThumbnail(for: url)
             let maxDim = await self.previewMaxDim
-            let previewData = PhotoItem.loadPreviewData(from: url, maxDim: CGFloat(maxDim))
+            let previewData = PhotoItem.loadImagePreviewData(from: url, maxDim: CGFloat(maxDim))
             await MainActor.run {
                 item.thumbnail = thumb
                 if let (cg, exif, orient, ow, oh) = previewData {
@@ -828,6 +894,7 @@ struct ContentView: View {
     private func selectGroup(_ groupID: UUID) {
         guard let index = photoGroups.firstIndex(where: { $0.id == groupID }) else { return }
 
+        focusedPane = .photoList
         selectedGroupID = groupID
         if let firstItem = photoGroups[index].photoItems.first {
             selectedItems = [firstItem.id]
@@ -983,13 +1050,13 @@ struct ContentView: View {
 
         for provider in fileProviders {
             Self.loadDroppedFileURLs(from: provider) { urls in
-                let jpegURLs = urls
+                let mediaURLs = urls
                     .map(\.standardizedFileURL)
-                    .filter { ["jpg", "jpeg"].contains($0.pathExtension.lowercased()) }
-                guard !jpegURLs.isEmpty else { return }
+                    .filter { MediaKind.from(url: $0) != nil }
+                guard !mediaURLs.isEmpty else { return }
 
                 Task { @MainActor in
-                    for url in jpegURLs {
+                    for url in mediaURLs {
                         addPhoto(url: url, to: targetGroupID)
                     }
                 }
@@ -1012,12 +1079,15 @@ struct ContentView: View {
     }
 
     private func browseFiles() {
-        let panel = NSOpenPanel(); panel.allowsMultipleSelection = true; panel.allowedContentTypes = [UTType.jpeg]
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = MediaKind.supportedContentTypes
         if panel.runModal() == .OK { panel.urls.forEach { addPhoto(url: $0) } }
     }
 
     private func addPhoto(url: URL, to targetGroupID: UUID? = nil) {
         let normalizedURL = url.standardizedFileURL
+        guard MediaKind.from(url: normalizedURL) != nil else { return }
         guard !allPhotoItems.contains(where: { $0.url.standardizedFileURL == normalizedURL }) else { return }
         let item = PhotoItem(url: normalizedURL)
 
@@ -1138,6 +1208,7 @@ struct ContentView: View {
     }
 
     private func selectItem(_ item: PhotoItem, modifiers: NSEvent.ModifierFlags) {
+        focusedPane = .photoList
         if let groupIndex = groupIndex(containing: item.id) {
             selectedGroupID = photoGroups[groupIndex].id
         }
@@ -1166,6 +1237,54 @@ struct ContentView: View {
         if selectedItems.isEmpty {
             previewImage = nil
         }
+        schedulePreviewRegeneration(delayNanoseconds: 0)
+    }
+
+    private func movePhotoSelection(_ direction: MoveCommandDirection) {
+        let step: Int
+        switch direction {
+        case .up:
+            step = -1
+        case .down:
+            step = 1
+        default:
+            return
+        }
+
+        guard !allPhotoItems.isEmpty else { return }
+
+        let currentID = lastSelectedID ?? selectedItems.first
+        let visibleItems = expandedPhotoItems
+        let items: [PhotoItem]
+
+        if visibleItems.isEmpty {
+            items = allPhotoItems
+        } else if let currentID,
+                  visibleItems.contains(where: { $0.id == currentID }) {
+            items = visibleItems
+        } else {
+            items = allPhotoItems
+        }
+
+        guard !items.isEmpty else { return }
+
+        let currentIndex: Int
+        if let currentID,
+           let index = items.firstIndex(where: { $0.id == currentID }) {
+            currentIndex = index
+        } else {
+            currentIndex = step > 0 ? -1 : items.count
+        }
+
+        let nextIndex = min(max(currentIndex + step, 0), items.count - 1)
+        let nextItem = items[nextIndex]
+
+        selectedItems = [nextItem.id]
+        lastSelectedID = nextItem.id
+        if let groupIndex = groupIndex(containing: nextItem.id) {
+            selectedGroupID = photoGroups[groupIndex].id
+        }
+        saveWorkspace()
         schedulePreviewRegeneration(delayNanoseconds: 0)
     }
 
@@ -1204,6 +1323,92 @@ struct ContentView: View {
         }
 
         isGeneratingPreview = true
+
+        if item.mediaKind.isVideo {
+            if let size = item.cachedOrientedSize {
+                let capturedSize = size
+
+                previewTask = Task.detached {
+                    guard !Task.isCancelled else { return }
+
+                    let layout = ImageProcessor.calculateLayout(
+                        imageWidth: capturedSize.width,
+                        imageHeight: capturedSize.height,
+                        options: options
+                    )
+
+                    do {
+                        let bg = try ImageProcessor.renderFrameBackground(layout: layout, options: options)
+                        let ns = NSImage(cgImage: bg, size: NSSize(width: bg.width, height: bg.height))
+                        guard !Task.isCancelled else { return }
+                        await MainActor.run {
+                            item.cachedBackground = bg
+                            item.cachedBackgroundOptions = bgOptions
+                            self.previewImage = ns
+                            self.isGeneratingPreview = false
+                        }
+                    } catch {
+                        await MainActor.run {
+                            if !Task.isCancelled {
+                                self.isGeneratingPreview = false
+                            }
+                        }
+                    }
+                }
+                return
+            }
+
+            let inputURL = item.url
+            previewTask = Task.detached {
+                guard !Task.isCancelled else { return }
+
+                let maxDim = await self.previewMaxDim
+                guard let data = try? await VideoProcessor.loadPreviewData(
+                    from: inputURL,
+                    maxDim: CGFloat(maxDim)
+                ) else {
+                    await MainActor.run {
+                        if !Task.isCancelled {
+                            self.isGeneratingPreview = false
+                        }
+                    }
+                    return
+                }
+
+                await MainActor.run {
+                    item.cachedPreviewImage = data.posterImage
+                    item.cachedExifInfo = data.exifInfo
+                    item.cachedOrientation = .up
+                    item.cachedOrientedSize = data.orientedSize
+                    item.cachedVideoDuration = data.durationSeconds
+                }
+
+                let layout = ImageProcessor.calculateLayout(
+                    imageWidth: data.orientedSize.width,
+                    imageHeight: data.orientedSize.height,
+                    options: options
+                )
+
+                do {
+                    let bg = try ImageProcessor.renderFrameBackground(layout: layout, options: options)
+                    let ns = NSImage(cgImage: bg, size: NSSize(width: bg.width, height: bg.height))
+                    guard !Task.isCancelled else { return }
+                    await MainActor.run {
+                        item.cachedBackground = bg
+                        item.cachedBackgroundOptions = bgOptions
+                        self.previewImage = ns
+                        self.isGeneratingPreview = false
+                    }
+                } catch {
+                    await MainActor.run {
+                        if !Task.isCancelled {
+                            self.isGeneratingPreview = false
+                        }
+                    }
+                }
+            }
+            return
+        }
         
         // Fast path: use cached downscaled image (no disk I/O)
         if let cg = item.cachedPreviewImage,
@@ -1240,7 +1445,7 @@ struct ContentView: View {
         previewTask = Task.detached {
             guard !Task.isCancelled else { return }
             
-            guard let data = PhotoItem.loadPreviewData(from: inputURL, maxDim: CGFloat(await self.previewMaxDim)) else {
+            guard let data = PhotoItem.loadImagePreviewData(from: inputURL, maxDim: CGFloat(await self.previewMaxDim)) else {
                 await MainActor.run { if !Task.isCancelled { self.isGeneratingPreview = false } }
                 return
             }
@@ -1277,6 +1482,7 @@ struct ContentView: View {
             item.cachedExifInfo = nil
             item.cachedOrientation = nil
             item.cachedOrientedSize = nil
+            item.cachedVideoDuration = nil
             item.cachedBackground = nil
             item.cachedBackgroundOptions = nil
         }
@@ -1330,12 +1536,21 @@ struct ContentView: View {
                 }
                 do {
                     let options = await MainActor.run { self.buildOptions(for: exportItem.state.configuration).0 }
-                    try ImageProcessor.process(
-                        inputURL: item.url,
-                        outputURL: outputURL,
-                        options: options,
-                        exportSettings: exportSettings
-                    )
+                    if item.mediaKind.isVideo {
+                        try await VideoProcessor.process(
+                            inputURL: item.url,
+                            outputURL: outputURL,
+                            options: options,
+                            exportSettings: exportSettings
+                        )
+                    } else {
+                        try ImageProcessor.process(
+                            inputURL: item.url,
+                            outputURL: outputURL,
+                            options: options,
+                            exportSettings: exportSettings
+                        )
+                    }
                     await MainActor.run { item.status = .completed; item.resultURL = outputURL }
                 }
                 catch { await MainActor.run { item.status = .failed(error.localizedDescription) } }
@@ -1362,7 +1577,8 @@ struct ContentView: View {
     private func outputURL(for item: PhotoItem, in directory: URL, exportSettings: ExportSettings) -> URL {
         let baseName = item.url.deletingPathExtension().lastPathComponent
         let prefix = sanitizedFilenamePrefix(exportSettings.filenamePrefix)
-        let fileName = "\(prefix)\(baseName).\(exportSettings.format.fileExtension)"
+        let fileExtension = item.mediaKind.isVideo ? "mov" : exportSettings.format.fileExtension
+        let fileName = "\(prefix)\(baseName).\(fileExtension)"
         return directory.appendingPathComponent(fileName)
     }
 
@@ -1463,20 +1679,30 @@ struct ContentView: View {
     }
 
     @MainActor
+    private var currentPreviewLayout: ImageProcessor.Layout? {
+        guard let item = currentPreviewItem,
+              let size = item.cachedOrientedSize else {
+            return nil
+        }
+
+        let (options, _) = buildOptions(for: settings.editorConfiguration)
+        return ImageProcessor.calculateLayout(
+            imageWidth: size.width,
+            imageHeight: size.height,
+            options: options
+        )
+    }
+
+    @MainActor
     private var currentPreviewTextLayers: [ImageProcessor.PreviewTextLayer] {
         guard let item = currentPreviewItem,
               let exif = item.cachedExifInfo,
-              let size = item.cachedOrientedSize,
+              let layout = currentPreviewLayout,
               previewImage != nil else {
             return []
         }
 
         let (options, _) = buildOptions(for: settings.editorConfiguration)
-        let layout = ImageProcessor.calculateLayout(
-            imageWidth: size.width,
-            imageHeight: size.height,
-            options: options
-        )
         return ImageProcessor.previewTextLayers(
             exifInfo: exif,
             layout: layout,

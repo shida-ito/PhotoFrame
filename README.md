@@ -1,13 +1,13 @@
 # PhotoFrame
 
-Stylish and minimal photo framing application for macOS. Add elegant borders and customizable EXIF-based text overlays to your photographs.
+Stylish and minimal photo framing application for macOS. Add elegant borders and customizable metadata-based text overlays to photos and videos.
 
 ![App Icon](PhotoFrame.png)
 ![App Screenshot](AppScreenShot.png)
 
 ## 📋 Features
 
-- **Batch Export**: Frame multiple photos at once with consistent settings.
+- **Batch Export**: Frame multiple photos and videos at once with consistent settings.
 - **Flexible Frame Layout**: Choose from standard ratios (1:1, 4:5, 3:2, 16:9, and more) or define your own custom ratio.
 - **Granular Position Control**:
     - Use precision sliders to position the photo both **vertically and horizontally** inside the frame.
@@ -21,8 +21,9 @@ Stylish and minimal photo framing application for macOS. Add elegant borders and
 - **Photo Groups**: Organize photos into groups in the left panel, drag to reorder them, and apply one shared layout setting set per group.
 - **Workspace Restore**: Reopen the latest group structure, settings, and photo assignments the next time you launch the app.
 - **Fast Interactive Preview**: Cached previews and live text overlays keep text editing and positioning responsive.
+- **Video Preview & Export**: Preview MOV/MP4 clips inside the frame layout, then export them with the frame and text burned into every frame as MOV.
 - **Preset Management**: Presets are shown in A-Z order, support hover preview before click-to-apply, and can be saved, overwritten, renamed, deleted, imported, exported, and cleared.
-- **Flexible Selection**: Finder-standard multi-selection (`Shift+Click`, `Cmd+Click`) for selective batch processing.
+- **Flexible Selection**: Finder-standard multi-selection (`Shift+Click`, `Cmd+Click`) plus `↑` / `↓` keyboard navigation for selective batch processing.
 - **Preferences**: Choose the UI language, color mode (`Midnight`, `Graphite`, `Black`, `Paper`, `Forest`), and font picker mode from `PhotoFrame > Settings...`.
 - **Multi-Window Workflow**: Open multiple windows to work on different photo sets in parallel.
 
@@ -46,7 +47,7 @@ Once complete, you will find `PhotoFrame.app` in the project root.
 ## 📖 Manual
 
 ### 1. Adding Photos
-- **Drag & Drop**: Simply drag JPEG files from Finder and drop them anywhere in the left panel.
+- **Drag & Drop**: Simply drag JPEG, MOV, or MP4 files from Finder and drop them anywhere in the left panel.
 - **Browse**: Click the "+" button or the empty state zone to select files via the file picker.
 
 ### 2. Selection & Preview
@@ -55,11 +56,12 @@ Once complete, you will find `PhotoFrame.app` in the project root.
 - **Top Controls**: Use the controls at the top of the left panel to add photos and add groups.
 - **Group Row Menu**: Rename or delete a group from the `...` menu on each group row.
 - **Move to Group**: Select one or more photos, then drag the selected photos onto another group.
-- **Drop Into Group**: Drop JPEG files directly onto a group row to add them to that group.
+- **Drop Into Group**: Drop JPEG, MOV, or MP4 files directly onto a group row to add them to that group.
 - **Clear Photos / Undo Clear**: Clear only the photos while keeping your groups, then restore the most recent clear with **Undo Clear** if needed.
 - **Delete Selected Photos**: After multi-selecting photos, click the `×` button on any selected photo row to remove the whole selection in one action.
 - **Multi-Selection**: Use macOS standard controls to select items in the list (**Click** to select one, **Cmd+Click** to toggle, **Shift+Click** for range selection).
-- **Preview**: The preview panel shows the first photo in your current selection.
+- **Keyboard Navigation**: After selecting the photo list, use `↑` / `↓` to move the current item selection up and down.
+- **Preview**: The preview panel shows the first item in your current selection. Video items play in-place inside the framed preview.
 - Most settings update the preview instantly, allowing you to fine-tune the look before processing.
 - **Preview Quality**: Use the quality picker in the settings panel to trade speed for detail.
 - **Multiple Windows**: Use **File > New Window** or `Cmd+N` to open another working window.
@@ -95,6 +97,7 @@ Once complete, you will find `PhotoFrame.app` in the project root.
 - **Export Sel (...)**: Click this to export only the photos currently selected in the list (the count is shown in the button).
 - **Export All**: Click this to export every photo in your list, regardless of selection.
 - **Export Settings**: Before choosing the destination folder, a dialog lets you set output format, image size, `Long Edge Custom`, JPEG quality, filename prefix, and whether EXIF / metadata should be copied.
+- **Video Export**: Video items are exported as `.mov`. The selected image size setting also scales video exports, and audio is preserved when the source file contains audio.
 - Select an output directory in the dialog.
 - The app saves files using the selected format and filename prefix.
 

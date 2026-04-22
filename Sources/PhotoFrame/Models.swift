@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 // MARK: - Aspect Ratio
 
@@ -175,6 +176,45 @@ struct BackgroundOptions: Equatable, Sendable {
     }
 }
 
+enum MediaKind: String, CaseIterable, Sendable, Codable {
+    case image
+    case video
+
+    static let supportedContentTypes: [UTType] = [
+        .jpeg,
+        .mpeg4Movie,
+        .quickTimeMovie
+    ]
+
+    static func from(url: URL) -> MediaKind? {
+        let ext = url.pathExtension.lowercased()
+
+        if ["jpg", "jpeg"].contains(ext) {
+            return .image
+        }
+
+        if ["mov", "mp4", "m4v"].contains(ext) {
+            return .video
+        }
+
+        guard let type = UTType(filenameExtension: ext) else { return nil }
+
+        if type.conforms(to: .jpeg) {
+            return .image
+        }
+
+        if type.conforms(to: .movie) {
+            return .video
+        }
+
+        return nil
+    }
+
+    var isVideo: Bool {
+        self == .video
+    }
+}
+
 // MARK: - Photo Item
 
 @MainActor
@@ -182,6 +222,7 @@ final class PhotoItem: ObservableObject, Identifiable {
     let id = UUID()
     let url: URL
     let filename: String
+    let mediaKind: MediaKind
 
     @Published var status: ProcessingStatus = .pending
     @Published var thumbnail: NSImage?
@@ -192,6 +233,7 @@ final class PhotoItem: ObservableObject, Identifiable {
     var cachedExifInfo: ExifInfo?
     var cachedOrientation: CGImagePropertyOrientation?
     var cachedOrientedSize: (width: Int, height: Int)?
+    var cachedVideoDuration: Double?
     
     // Cached intermediate render (frame + photo, no text)
     var cachedBackground: CGImage?
@@ -200,11 +242,12 @@ final class PhotoItem: ObservableObject, Identifiable {
     init(url: URL) {
         self.url = url
         self.filename = url.lastPathComponent
+        self.mediaKind = MediaKind.from(url: url) ?? .image
     }
     
     /// Load and cache a downscaled version of the image for fast preview rendering.
     /// Call this on a background thread, then set properties on main thread.
-    nonisolated static func loadPreviewData(from url: URL, maxDim: CGFloat = 800) -> (CGImage, ExifInfo, CGImagePropertyOrientation, Int, Int)? {
+    nonisolated static func loadImagePreviewData(from url: URL, maxDim: CGFloat = 800) -> (CGImage, ExifInfo, CGImagePropertyOrientation, Int, Int)? {
         guard let isrc = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
         
         let exif = ImageProcessor.extractExif(from: isrc)

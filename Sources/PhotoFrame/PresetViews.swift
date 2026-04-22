@@ -71,6 +71,7 @@ struct PresetMenu: View {
                                     updateHoverState(for: preset, isHovering: isHovering)
                                 },
                                 onApply: { applyPreset(preset) },
+                                onMenuOpen: { endPresetPreview() },
                                 onExport: { exportPreset(preset) },
                                 onOverwrite: { overwritePreset(preset) },
                                 onRename: {
@@ -298,6 +299,7 @@ private struct PresetRow: View {
     let isHovered: Bool
     let onHoverChange: (Bool) -> Void
     let onApply: () -> Void
+    let onMenuOpen: () -> Void
     let onExport: () -> Void
     let onOverwrite: () -> Void
     let onRename: () -> Void
@@ -315,11 +317,23 @@ private struct PresetRow: View {
             .buttonStyle(.plain)
 
             Menu {
-                Button(L10n.exportPreset(language), action: onExport)
-                Button(L10n.overwritePreset(language), action: onOverwrite)
+                Button(L10n.exportPreset(language)) {
+                    onMenuOpen()
+                    onExport()
+                }
+                Button(L10n.overwritePreset(language)) {
+                    onMenuOpen()
+                    onOverwrite()
+                }
                 Divider()
-                Button(L10n.renamePresetMenu(language), action: onRename)
-                Button(L10n.deletePreset(language), role: .destructive, action: onDelete)
+                Button(L10n.renamePresetMenu(language)) {
+                    onMenuOpen()
+                    onRename()
+                }
+                Button(L10n.deletePreset(language), role: .destructive) {
+                    onMenuOpen()
+                    onDelete()
+                }
             } label: {
                 Image(systemName: "ellipsis.circle")
                     .foregroundColor(.secondary)
@@ -327,6 +341,11 @@ private struct PresetRow: View {
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
+            .simultaneousGesture(
+                TapGesture().onEnded {
+                    onMenuOpen()
+                }
+            )
         }
         .background(
             RoundedRectangle(cornerRadius: 10)

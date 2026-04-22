@@ -20,11 +20,11 @@ enum L10n {
     static func clear(_ language: AppLanguage) -> String { language == .japanese ? "クリア" : "Clear" }
     static func clearPhotos(_ language: AppLanguage) -> String { language == .japanese ? "写真をクリア" : "Clear Photos" }
     static func undoClear(_ language: AppLanguage) -> String { language == .japanese ? "元に戻す" : "Undo Clear" }
-    static func dropJPEGFilesHere(_ language: AppLanguage) -> String { language == .japanese ? "JPEG ファイルをここにドロップ" : "Drop JPEG files here" }
-    static func photoCount(_ count: Int, _ language: AppLanguage) -> String { language == .japanese ? "\(count) 枚" : "\(count) photo(s)" }
+    static func dropJPEGFilesHere(_ language: AppLanguage) -> String { language == .japanese ? "写真または動画をここにドロップ" : "Drop photos or videos here" }
+    static func photoCount(_ count: Int, _ language: AppLanguage) -> String { language == .japanese ? "\(count) 件" : "\(count) item(s)" }
     static func groupName(_ language: AppLanguage) -> String { language == .japanese ? "グループ名" : "Group Name" }
     static func addGroup(_ language: AppLanguage) -> String { language == .japanese ? "グループを追加" : "Add Group" }
-    static func addPhotos(_ language: AppLanguage) -> String { language == .japanese ? "写真を追加" : "Add Photos" }
+    static func addPhotos(_ language: AppLanguage) -> String { language == .japanese ? "写真 / 動画を追加" : "Add Media" }
     static func newGroupTitle(_ language: AppLanguage) -> String { language == .japanese ? "グループを追加" : "New Group" }
     static func newGroupMessage(_ language: AppLanguage) -> String { language == .japanese ? "同じ設定をまとめたい写真用のグループ名を入力してください。" : "Enter a name for the photo group." }
     static func renameGroupTitle(_ language: AppLanguage) -> String { language == .japanese ? "グループ名を変更" : "Rename Group" }
@@ -46,8 +46,9 @@ enum L10n {
     static func copyMetadata(_ language: AppLanguage) -> String { language == .japanese ? "EXIF / メタデータを引き継ぐ" : "Copy EXIF / metadata" }
     static func exportDestination(_ language: AppLanguage) -> String { language == .japanese ? "書き出し先フォルダを選択します。" : "Choose an output folder after confirming these settings." }
     static func exportAction(_ language: AppLanguage) -> String { language == .japanese ? "書き出し" : "Export" }
+    static func videoExportNote(_ language: AppLanguage) -> String { language == .japanese ? "動画は MOV で書き出します。サイズ設定は動画にも適用され、音声があれば保持します。" : "Videos export as MOV. Size settings also apply to video, and audio is preserved when present." }
     static func preview(_ language: AppLanguage) -> String { language == .japanese ? "プレビュー" : "Preview" }
-    static func selectPhotoToPreview(_ language: AppLanguage) -> String { language == .japanese ? "写真を選択するとプレビューを表示します" : "Select a photo to preview" }
+    static func selectPhotoToPreview(_ language: AppLanguage) -> String { language == .japanese ? "写真または動画を選択するとプレビューを表示します" : "Select a photo or video to preview" }
     static func settings(_ language: AppLanguage) -> String { language == .japanese ? "設定" : "Settings" }
     static func editingGroup(_ groupName: String, _ language: AppLanguage) -> String { language == .japanese ? "編集中のグループ: \(groupName)" : "Editing Group: \(groupName)" }
     static func frameWidth(_ language: AppLanguage) -> String { language == .japanese ? "フレーム幅" : "Frame Width" }
