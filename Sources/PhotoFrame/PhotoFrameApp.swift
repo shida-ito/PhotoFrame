@@ -17,10 +17,18 @@ struct PhotoFrameApp: App {
 
 struct PreferencesView: View {
     @AppStorage("appLanguage") private var appLanguageRaw = AppLanguage.english.rawValue
+    @AppStorage("uiTheme") private var uiThemeRaw = UITheme.midnight.rawValue
     @AppStorage("fontSelectionDisplayMode") private var fontSelectionDisplayModeRaw = FontSelectionDisplayMode.compact.rawValue
 
     private var language: AppLanguage {
         AppLanguage(rawValue: appLanguageRaw) ?? .english
+    }
+
+    private var uiTheme: Binding<UITheme> {
+        Binding(
+            get: { UITheme(rawValue: uiThemeRaw) ?? .midnight },
+            set: { uiThemeRaw = $0.rawValue }
+        )
     }
 
     private var appLanguage: Binding<AppLanguage> {
@@ -43,6 +51,12 @@ struct PreferencesView: View {
                 Picker(L10n.displayLanguage(language), selection: appLanguage) {
                     ForEach(AppLanguage.allCases) { appLanguage in
                         Text(appLanguage.title).tag(appLanguage)
+                    }
+                }
+
+                Picker(L10n.colorMode(language), selection: uiTheme) {
+                    ForEach(UITheme.allCases) { mode in
+                        Text(mode.title(language)).tag(mode)
                     }
                 }
 

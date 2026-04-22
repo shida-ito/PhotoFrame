@@ -24,6 +24,9 @@ struct ImageProcessor {
     struct Options: Sendable {
         let effectiveRatio: CGFloat?  // nil = original ratio
         let frameColorComponents: (r: CGFloat, g: CGFloat, b: CGFloat, a: CGFloat)
+        let photoBorderEnabled: Bool
+        let photoBorderColorComponents: (r: CGFloat, g: CGFloat, b: CGFloat, a: CGFloat)
+        let photoBorderWidthPercent: CGFloat
         let paddingRatio: CGFloat
         
         let photoVOffset: Double
@@ -139,13 +142,15 @@ struct ImageProcessor {
     static func process(
         inputURL: URL,
         outputURL: URL,
-        options: Options
+        options: Options,
+        exportSettings: ExportSettings
     ) throws {
         // 1. Load image
         guard let imageSource = CGImageSourceCreateWithURL(inputURL as CFURL, nil),
               let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else {
             throw ProcessingError.cannotLoadImage
         }
+        let sourceProperties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any]
 
         // 2. Extract EXIF
         let exifInfo = extractExif(from: imageSource)
@@ -172,8 +177,27 @@ struct ImageProcessor {
             options: options
         )
 
-        // 6. Save as JPEG
-        try saveJPEG(image: rendered, to: outputURL, quality: 0.95)
+        let finalImage = try resizedImageIfNeeded(
+            image: rendered,
+            maxLongEdge: exportSettings.maxLongEdge
+        )
+        let metadata = metadataProperties(
+            from: sourceProperties,
+            outputImage: finalImage,
+            includeMetadata: exportSettings.copyMetadata
+        )
+
+        switch exportSettings.format {
+        case .jpeg:
+            try saveJPEG(
+                image: finalImage,
+                to: outputURL,
+                quality: CGFloat(exportSettings.jpegQuality),
+                properties: metadata
+            )
+        case .png:
+            try savePNG(image: finalImage, to: outputURL, properties: metadata)
+        }
     }
 
     // MARK: - EXIF Extraction
@@ -185,8 +209,13 @@ struct ImageProcessor {
 
         let exifDict = properties[kCGImagePropertyExifDictionary] as? [CFString: Any] ?? [:]
         let tiffDict = properties[kCGImagePropertyTIFFDictionary] as? [CFString: Any] ?? [:]
+        let gpsDict = properties[kCGImagePropertyGPSDictionary] as? [CFString: Any] ?? [:]
+        let exifAuxDict = properties[kCGImagePropertyExifAuxDictionary] as? [CFString: Any] ?? [:]
 
         var info = ExifInfo()
+        info.metadataFields = flattenedMetadataFields(
+            dictionaries: [exifDict, tiffDict, gpsDict, exifAuxDict]
+        )
 
         info.cameraMake = tiffDict[kCGImagePropertyTIFFMake] as? String
         info.cameraModel = tiffDict[kCGImagePropertyTIFFModel] as? String
@@ -221,7 +250,108 @@ struct ImageProcessor {
             info.iso = "\(iso)"
         }
 
+        info.dateTaken = formattedCaptureDate(
+            exifDateTimeOriginal: exifDict[kCGImagePropertyExifDateTimeOriginal] as? String,
+            exifDateTimeDigitized: exifDict[kCGImagePropertyExifDateTimeDigitized] as? String,
+            tiffDateTime: tiffDict[kCGImagePropertyTIFFDateTime] as? String
+        )
+
         return info
+    }
+
+    private static func flattenedMetadataFields(
+        dictionaries: [[CFString: Any]]
+    ) -> [String: String] {
+        var fields: [String: String] = [:]
+
+        for dictionary in dictionaries {
+            for (key, value) in dictionary {
+                guard let stringValue = metadataString(from: value), !stringValue.isEmpty else { continue }
+                fields[String(key)] = stringValue
+            }
+        }
+
+        return fields
+    }
+
+    private static func metadataString(from value: Any) -> String? {
+        if let string = value as? String {
+            return string
+        }
+
+        if let number = value as? NSNumber {
+            return number.stringValue
+        }
+
+        if let values = value as? [Any] {
+            let stringValues = values.compactMap { metadataString(from: $0) }
+            return stringValues.isEmpty ? nil : stringValues.joined(separator: ", ")
+        }
+
+        if let dict = value as? [AnyHashable: Any] {
+            let parts = dict.compactMap { key, nestedValue -> String? in
+                guard let nestedString = metadataString(from: nestedValue) else { return nil }
+                return "\(key)=\(nestedString)"
+            }
+            return parts.isEmpty ? nil : parts.joined(separator: ", ")
+        }
+
+        return String(describing: value)
+    }
+
+    private static func formattedCaptureDate(
+        exifDateTimeOriginal: String?,
+        exifDateTimeDigitized: String?,
+        tiffDateTime: String?
+    ) -> String? {
+        let candidates = [exifDateTimeOriginal, exifDateTimeDigitized, tiffDateTime]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        for candidate in candidates {
+            if let parsed = parseEXIFDate(candidate) {
+                return parsed
+            }
+        }
+
+        return nil
+    }
+
+    private static func parseEXIFDate(_ value: String) -> String? {
+        let formatters: [DateFormatter] = {
+            let formats = [
+                "yyyy:MM:dd HH:mm:ss",
+                "yyyy:MM:dd HH:mm:ss.SSS",
+                "yyyy:MM:dd HH:mm:ssXXXXX",
+                "yyyy-MM-dd HH:mm:ss",
+                "yyyy-MM-dd'T'HH:mm:ssXXXXX"
+            ]
+
+            return formats.map { format in
+                let formatter = DateFormatter()
+                formatter.locale = Locale(identifier: "en_US_POSIX")
+                formatter.timeZone = TimeZone(secondsFromGMT: 0)
+                formatter.dateFormat = format
+                return formatter
+            }
+        }()
+
+        let outputFormatter: DateFormatter = {
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.dateFormat = "yyyy-MM-dd"
+            return formatter
+        }()
+
+        for formatter in formatters {
+            if let date = formatter.date(from: value) {
+                return outputFormatter.string(from: date)
+            }
+        }
+
+        let datePart = value.split(separator: " ").first.map(String.init) ?? value
+        let normalized = datePart.replacingOccurrences(of: ":", with: "-")
+        return normalized.isEmpty ? nil : normalized
     }
 
     // MARK: - Orientation
@@ -357,6 +487,15 @@ struct ImageProcessor {
         applyOrientationTransform(context: context, orientation: orientation, drawRect: layout.imageRect)
         context.draw(cgImage, in: layout.imageRect)
         context.restoreGState()
+
+        if options.photoBorderEnabled {
+            strokePhotoBorder(
+                context: context,
+                imageRect: layout.imageRect,
+                color: options.photoBorderColorComponents,
+                widthPercent: options.photoBorderWidthPercent
+            )
+        }
 
         guard let result = context.makeImage() else {
             throw ProcessingError.cannotRenderImage
@@ -530,13 +669,122 @@ struct ImageProcessor {
         )
     }
 
-    static func saveJPEG(image: CGImage, to url: URL, quality: CGFloat) throws {
+    private static func strokePhotoBorder(
+        context: CGContext,
+        imageRect: CGRect,
+        color: (r: CGFloat, g: CGFloat, b: CGFloat, a: CGFloat),
+        widthPercent: CGFloat
+    ) {
+        let borderWidth = photoBorderWidth(for: imageRect, widthPercent: widthPercent)
+        let inset = borderWidth / 2.0
+        let strokeRect = imageRect.insetBy(dx: -inset, dy: -inset)
+
+        guard strokeRect.width > 0, strokeRect.height > 0 else { return }
+
+        context.saveGState()
+        context.setStrokeColor(red: color.r, green: color.g, blue: color.b, alpha: color.a)
+        context.setLineWidth(borderWidth)
+        context.stroke(strokeRect)
+        context.restoreGState()
+    }
+
+    private static func photoBorderWidth(for imageRect: CGRect, widthPercent: CGFloat) -> CGFloat {
+        let resolvedPercent = max(widthPercent, 0.01) / 100.0
+        return max(1, round(min(imageRect.width, imageRect.height) * resolvedPercent))
+    }
+
+    static func saveJPEG(
+        image: CGImage,
+        to url: URL,
+        quality: CGFloat,
+        properties: [CFString: Any]? = nil
+    ) throws {
         guard let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.jpeg.identifier as CFString, 1, nil) else {
             throw ProcessingError.cannotCreateOutput
         }
-        let options: [CFString: Any] = [kCGImageDestinationLossyCompressionQuality: quality]
+        var options = properties ?? [:]
+        options[kCGImageDestinationLossyCompressionQuality] = quality
         CGImageDestinationAddImage(destination, image, options as CFDictionary)
         if !CGImageDestinationFinalize(destination) { throw ProcessingError.cannotWriteOutput }
+    }
+
+    static func savePNG(image: CGImage, to url: URL, properties: [CFString: Any]? = nil) throws {
+        guard let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil) else {
+            throw ProcessingError.cannotCreateOutput
+        }
+        CGImageDestinationAddImage(destination, image, properties as CFDictionary?)
+        if !CGImageDestinationFinalize(destination) { throw ProcessingError.cannotWriteOutput }
+    }
+
+    static func metadataProperties(
+        from sourceProperties: [CFString: Any]?,
+        outputImage: CGImage,
+        includeMetadata: Bool
+    ) -> [CFString: Any]? {
+        guard includeMetadata, let sourceProperties else { return nil }
+
+        var metadata: [CFString: Any] = [:]
+
+        if let tiff = sourceProperties[kCGImagePropertyTIFFDictionary] {
+            metadata[kCGImagePropertyTIFFDictionary] = tiff
+        }
+        if let gps = sourceProperties[kCGImagePropertyGPSDictionary] {
+            metadata[kCGImagePropertyGPSDictionary] = gps
+        }
+        if let iptc = sourceProperties[kCGImagePropertyIPTCDictionary] {
+            metadata[kCGImagePropertyIPTCDictionary] = iptc
+        }
+        if let exif = sourceProperties[kCGImagePropertyExifDictionary] as? [CFString: Any] {
+            var updatedExif = exif
+            updatedExif[kCGImagePropertyExifPixelXDimension] = outputImage.width
+            updatedExif[kCGImagePropertyExifPixelYDimension] = outputImage.height
+            metadata[kCGImagePropertyExifDictionary] = updatedExif
+        }
+        if let dpiWidth = sourceProperties[kCGImagePropertyDPIWidth] {
+            metadata[kCGImagePropertyDPIWidth] = dpiWidth
+        }
+        if let dpiHeight = sourceProperties[kCGImagePropertyDPIHeight] {
+            metadata[kCGImagePropertyDPIHeight] = dpiHeight
+        }
+
+        metadata[kCGImagePropertyOrientation] = 1
+        metadata[kCGImagePropertyPixelWidth] = outputImage.width
+        metadata[kCGImagePropertyPixelHeight] = outputImage.height
+
+        return metadata
+    }
+
+    static func resizedImageIfNeeded(image: CGImage, maxLongEdge: Int?) throws -> CGImage {
+        guard let maxLongEdge else { return image }
+
+        let currentLongEdge = max(image.width, image.height)
+        guard currentLongEdge > maxLongEdge else { return image }
+
+        let scale = CGFloat(maxLongEdge) / CGFloat(currentLongEdge)
+        let newWidth = max(Int((CGFloat(image.width) * scale).rounded()), 1)
+        let newHeight = max(Int((CGFloat(image.height) * scale).rounded()), 1)
+
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(
+            data: nil,
+            width: newWidth,
+            height: newHeight,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            throw ProcessingError.cannotCreateContext
+        }
+
+        context.interpolationQuality = .high
+        context.draw(image, in: CGRect(x: 0, y: 0, width: newWidth, height: newHeight))
+
+        guard let scaledImage = context.makeImage() else {
+            throw ProcessingError.cannotRenderImage
+        }
+
+        return scaledImage
     }
 
     static func generateThumbnail(for url: URL, maxSize: CGFloat = 200) -> NSImage? {

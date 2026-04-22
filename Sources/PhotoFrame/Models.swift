@@ -80,8 +80,76 @@ enum FontSelectionDisplayMode: String, CaseIterable, Identifiable, Sendable, Cod
     }
 }
 
+enum ExportFormat: String, CaseIterable, Identifiable, Sendable, Codable {
+    case jpeg
+    case png
+
+    var id: String { rawValue }
+
+    var fileExtension: String {
+        switch self {
+        case .jpeg: return "jpg"
+        case .png: return "png"
+        }
+    }
+
+    func title(_ language: AppLanguage) -> String {
+        switch self {
+        case .jpeg: return "JPEG"
+        case .png: return "PNG"
+        }
+    }
+}
+
+enum ExportSizePreset: String, CaseIterable, Identifiable, Sendable, Codable {
+    case original
+    case longEdge2048
+    case longEdge4096
+    case custom
+
+    var id: String { rawValue }
+
+    func title(_ language: AppLanguage) -> String {
+        switch self {
+        case .original:
+            return language == .japanese ? "元サイズ" : "Original Size"
+        case .longEdge2048:
+            return language == .japanese ? "長辺 2048px" : "Long Edge 2048px"
+        case .longEdge4096:
+            return language == .japanese ? "長辺 4096px" : "Long Edge 4096px"
+        case .custom:
+            return language == .japanese ? "長辺カスタム" : "Long Edge Custom"
+        }
+    }
+}
+
+struct ExportSettings: Equatable, Sendable, Codable {
+    var format: ExportFormat = .jpeg
+    var jpegQuality: Double = 0.95
+    var sizePreset: ExportSizePreset = .original
+    var customLongEdge: Int = 3000
+    var filenamePrefix: String = "framed_"
+    var copyMetadata: Bool = true
+
+    var maxLongEdge: Int? {
+        switch sizePreset {
+        case .original:
+            return nil
+        case .longEdge2048:
+            return 2048
+        case .longEdge4096:
+            return 4096
+        case .custom:
+            return max(customLongEdge, 1)
+        }
+    }
+}
+
 struct BackgroundOptions: Equatable, Sendable {
     let frameColor: (r: CGFloat, g: CGFloat, b: CGFloat, a: CGFloat)
+    let photoBorderEnabled: Bool
+    let photoBorderColor: (r: CGFloat, g: CGFloat, b: CGFloat, a: CGFloat)
+    let photoBorderWidthPercent: CGFloat
     let paddingRatio: CGFloat
     let photoVOffset: Double
     let photoHOffset: Double
@@ -93,6 +161,12 @@ struct BackgroundOptions: Equatable, Sendable {
         lhs.frameColor.g == rhs.frameColor.g &&
         lhs.frameColor.b == rhs.frameColor.b &&
         lhs.frameColor.a == rhs.frameColor.a &&
+        lhs.photoBorderEnabled == rhs.photoBorderEnabled &&
+        lhs.photoBorderColor.r == rhs.photoBorderColor.r &&
+        lhs.photoBorderColor.g == rhs.photoBorderColor.g &&
+        lhs.photoBorderColor.b == rhs.photoBorderColor.b &&
+        lhs.photoBorderColor.a == rhs.photoBorderColor.a &&
+        lhs.photoBorderWidthPercent == rhs.photoBorderWidthPercent &&
         lhs.paddingRatio == rhs.paddingRatio &&
         lhs.photoVOffset == rhs.photoVOffset &&
         lhs.photoHOffset == rhs.photoHOffset &&
@@ -158,7 +232,7 @@ enum ProcessingStatus: Sendable {
     func label(_ language: AppLanguage) -> String {
         switch self {
         case .pending: return language == .japanese ? "待機中" : "Pending"
-        case .processing: return language == .japanese ? "処理中…" : "Processing…"
+        case .processing: return language == .japanese ? "書き出し中…" : "Exporting…"
         case .completed: return language == .japanese ? "完了" : "Done"
         case .failed(let msg): return language == .japanese ? "エラー: \(msg)" : "Error: \(msg)"
         }
@@ -218,11 +292,89 @@ struct FrameConfiguration: Equatable, Codable, Sendable {
     var customWidth: String = "4"
     var customHeight: String = "5"
     var frameColor: CodableColor = CodableColor(red: 1, green: 1, blue: 1, alpha: 1)
+    var photoBorderEnabled = false
+    var photoBorderColor = CodableColor(red: 0, green: 0, blue: 0, alpha: 1)
+    var photoBorderWidthPercent: CGFloat = 0.3
     var paddingRatio: CGFloat = 0.05
     var photoVOffset: Double = 0.5
     var photoHOffset: Double = 0.5
     var innerPadding: CGFloat = 0.3
     var textLayers: [TextLayer] = [.defaultExif]
+
+    enum CodingKeys: String, CodingKey {
+        case aspectRatio
+        case customWidth
+        case customHeight
+        case frameColor
+        case photoBorderEnabled
+        case photoBorderColor
+        case photoBorderWidthPercent
+        case paddingRatio
+        case photoVOffset
+        case photoHOffset
+        case innerPadding
+        case textLayers
+    }
+
+    init(
+        aspectRatio: AspectRatio = .square,
+        customWidth: String = "4",
+        customHeight: String = "5",
+        frameColor: CodableColor = CodableColor(red: 1, green: 1, blue: 1, alpha: 1),
+        photoBorderEnabled: Bool = false,
+        photoBorderColor: CodableColor = CodableColor(red: 0, green: 0, blue: 0, alpha: 1),
+        photoBorderWidthPercent: CGFloat = 0.3,
+        paddingRatio: CGFloat = 0.05,
+        photoVOffset: Double = 0.5,
+        photoHOffset: Double = 0.5,
+        innerPadding: CGFloat = 0.3,
+        textLayers: [TextLayer] = [.defaultExif]
+    ) {
+        self.aspectRatio = aspectRatio
+        self.customWidth = customWidth
+        self.customHeight = customHeight
+        self.frameColor = frameColor
+        self.photoBorderEnabled = photoBorderEnabled
+        self.photoBorderColor = photoBorderColor
+        self.photoBorderWidthPercent = photoBorderWidthPercent
+        self.paddingRatio = paddingRatio
+        self.photoVOffset = photoVOffset
+        self.photoHOffset = photoHOffset
+        self.innerPadding = innerPadding
+        self.textLayers = textLayers
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        aspectRatio = try container.decodeIfPresent(AspectRatio.self, forKey: .aspectRatio) ?? .square
+        customWidth = try container.decodeIfPresent(String.self, forKey: .customWidth) ?? "4"
+        customHeight = try container.decodeIfPresent(String.self, forKey: .customHeight) ?? "5"
+        frameColor = try container.decodeIfPresent(CodableColor.self, forKey: .frameColor) ?? CodableColor(red: 1, green: 1, blue: 1, alpha: 1)
+        photoBorderEnabled = try container.decodeIfPresent(Bool.self, forKey: .photoBorderEnabled) ?? false
+        photoBorderColor = try container.decodeIfPresent(CodableColor.self, forKey: .photoBorderColor) ?? CodableColor(red: 0, green: 0, blue: 0, alpha: 1)
+        photoBorderWidthPercent = try container.decodeIfPresent(CGFloat.self, forKey: .photoBorderWidthPercent) ?? 0.3
+        paddingRatio = try container.decodeIfPresent(CGFloat.self, forKey: .paddingRatio) ?? 0.05
+        photoVOffset = try container.decodeIfPresent(Double.self, forKey: .photoVOffset) ?? 0.5
+        photoHOffset = try container.decodeIfPresent(Double.self, forKey: .photoHOffset) ?? 0.5
+        innerPadding = try container.decodeIfPresent(CGFloat.self, forKey: .innerPadding) ?? 0.3
+        textLayers = try container.decodeIfPresent([TextLayer].self, forKey: .textLayers) ?? [.defaultExif]
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(aspectRatio, forKey: .aspectRatio)
+        try container.encode(customWidth, forKey: .customWidth)
+        try container.encode(customHeight, forKey: .customHeight)
+        try container.encode(frameColor, forKey: .frameColor)
+        try container.encode(photoBorderEnabled, forKey: .photoBorderEnabled)
+        try container.encode(photoBorderColor, forKey: .photoBorderColor)
+        try container.encode(photoBorderWidthPercent, forKey: .photoBorderWidthPercent)
+        try container.encode(paddingRatio, forKey: .paddingRatio)
+        try container.encode(photoVOffset, forKey: .photoVOffset)
+        try container.encode(photoHOffset, forKey: .photoHOffset)
+        try container.encode(innerPadding, forKey: .innerPadding)
+        try container.encode(textLayers, forKey: .textLayers)
+    }
 
     var customRatio: CGFloat? {
         guard let w = Double(customWidth), let h = Double(customHeight), w > 0, h > 0 else { return nil }
@@ -240,6 +392,9 @@ struct FrameConfiguration: Equatable, Codable, Sendable {
             customWidth: customWidth,
             customHeight: customHeight,
             frameColor: frameColor,
+            photoBorderEnabled: photoBorderEnabled,
+            photoBorderColor: photoBorderColor,
+            photoBorderWidthPercent: photoBorderWidthPercent,
             paddingRatio: paddingRatio,
             photoVOffset: photoVOffset,
             photoHOffset: photoHOffset,
@@ -250,6 +405,11 @@ struct FrameConfiguration: Equatable, Codable, Sendable {
     var colorValue: Color {
         get { frameColor.color }
         set { frameColor = CodableColor(color: newValue) }
+    }
+
+    var photoBorderColorValue: Color {
+        get { photoBorderColor.color }
+        set { photoBorderColor = CodableColor(color: newValue) }
     }
 }
 
@@ -386,6 +546,13 @@ struct TextLayer: Identifiable, Equatable, Sendable, Codable {
 
 // MARK: - Exif Display Fields
 
+struct ExifMetadataTag: Identifiable, Hashable, Sendable {
+    let name: String
+    let value: String
+
+    var id: String { name }
+}
+
 struct ExifInfo: Sendable {
     var cameraMake: String?
     var cameraModel: String?
@@ -395,18 +562,62 @@ struct ExifInfo: Sendable {
     var exposureTime: String?
     var iso: String?
     var dateTaken: String?
+    var metadataFields: [String: String] = [:]
+
+    private var dateComponents: (year: String, month: String, day: String)? {
+        guard let dateTaken else { return nil }
+        let components = dateTaken.split(separator: "-").map(String.init)
+        guard components.count >= 3 else { return nil }
+        return (year: components[0], month: components[1], day: components[2])
+    }
+
+    var availableMetadataTags: [ExifMetadataTag] {
+        metadataFields
+            .keys
+            .sorted()
+            .compactMap { key in
+                guard let value = metadataFields[key], !value.isEmpty else { return nil }
+                return ExifMetadataTag(name: key, value: value)
+            }
+    }
+
+    private var templateValues: [String: String] {
+        var values = metadataFields
+        values["Camera"] = cameraModel ?? cameraMake ?? ""
+        values["Lens"] = lensModel ?? ""
+        values["Focal"] = focalLength ?? ""
+        values["FStop"] = fNumber ?? ""
+        values["Shutter"] = exposureTime ?? ""
+        values["ISO"] = iso ?? ""
+        values["Date"] = dateTaken ?? ""
+        values["Year"] = dateComponents?.year ?? ""
+        values["Month"] = dateComponents?.month ?? ""
+        values["Day"] = dateComponents?.day ?? ""
+        return values
+    }
 
     func format(template: String) -> String {
-        var str = template
-        str = str.replacingOccurrences(of: "{Camera}", with: cameraModel ?? cameraMake ?? "")
-        str = str.replacingOccurrences(of: "{Lens}", with: lensModel ?? "")
-        str = str.replacingOccurrences(of: "{Focal}", with: focalLength ?? "")
-        str = str.replacingOccurrences(of: "{FStop}", with: fNumber ?? "")
-        str = str.replacingOccurrences(of: "{Shutter}", with: exposureTime ?? "")
-        str = str.replacingOccurrences(of: "{ISO}", with: iso ?? "")
-        str = str.replacingOccurrences(of: "{Date}", with: dateTaken ?? "")
-        
-        return str.trimmingCharacters(in: .whitespacesAndNewlines)
+        let values = templateValues
+        guard let regex = try? NSRegularExpression(pattern: #"\{([^{}]+)\}"#) else {
+            return template.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        let nsTemplate = template as NSString
+        let matches = regex.matches(
+            in: template,
+            range: NSRange(location: 0, length: nsTemplate.length)
+        )
+
+        let resolved = matches.reversed().reduce(template) { partialResult, match in
+            guard match.numberOfRanges > 1 else { return partialResult }
+            let key = nsTemplate.substring(with: match.range(at: 1))
+            guard let replacement = values[key] else { return partialResult }
+
+            let mutable = partialResult as NSString
+            return mutable.replacingCharacters(in: match.range, with: replacement)
+        }
+
+        return resolved.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
@@ -415,6 +626,9 @@ struct PreviewBackgroundSignature: Equatable {
     let customWidth: String
     let customHeight: String
     let frameColor: CodableColor
+    let photoBorderEnabled: Bool
+    let photoBorderColor: CodableColor
+    let photoBorderWidthPercent: CGFloat
     let paddingRatio: CGFloat
     let photoVOffset: Double
     let photoHOffset: Double

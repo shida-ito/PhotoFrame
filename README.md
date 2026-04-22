@@ -7,21 +7,23 @@ Stylish and minimal photo framing application for macOS. Add elegant borders and
 
 ## 📋 Features
 
-- **Batch Processing**: Frame multiple photos at once with consistent settings.
+- **Batch Export**: Frame multiple photos at once with consistent settings.
 - **Flexible Frame Layout**: Choose from standard ratios (1:1, 4:5, 3:2, 16:9, and more) or define your own custom ratio.
 - **Granular Position Control**:
     - Use precision sliders to position the photo both **vertically and horizontally** inside the frame.
     - Adjust frame width from `0` upward for anything from borderless layouts to wide margins.
+- **Photo Border**: Add an optional extra border that follows the exact photo ratio, with configurable color and width.
 - **Text Layers**:
     - Add multiple text layers.
-    - Use EXIF tags such as `{Camera}`, `{Lens}`, `{Focal}`, `{FStop}`, `{Shutter}`, `{ISO}`, and `{Date}` inside each template.
+    - Use EXIF tags such as `{Camera}`, `{Lens}`, `{Focal}`, `{FStop}`, `{Shutter}`, `{ISO}`, `{Date}`, `{Year}`, `{Month}`, and `{Day}` inside each template.
+    - You can also enter any tag name found in the current photo as `{TagName}`.
     - Control font, color, size, X/Y position, alignment, and visibility per layer.
-- **Photo Groups**: Organize photos into groups in the left panel and apply one shared layout setting set per group.
+- **Photo Groups**: Organize photos into groups in the left panel, drag to reorder them, and apply one shared layout setting set per group.
 - **Workspace Restore**: Reopen the latest group structure, settings, and photo assignments the next time you launch the app.
 - **Fast Interactive Preview**: Cached previews and live text overlays keep text editing and positioning responsive.
-- **Preset Management**: Save, rename, delete, and clear reusable layout presets.
+- **Preset Management**: Presets are shown in A-Z order, support hover preview before click-to-apply, and can be saved, overwritten, renamed, deleted, imported, exported, and cleared.
 - **Flexible Selection**: Finder-standard multi-selection (`Shift+Click`, `Cmd+Click`) for selective batch processing.
-- **Preferences**: Choose the UI language (English / Japanese) and switch the font picker between `Search` and `Full List` modes.
+- **Preferences**: Choose the UI language, color mode, and font picker mode from `PhotoFrame > Settings...`.
 - **Multi-Window Workflow**: Open multiple windows to work on different photo sets in parallel.
 
 ## 🚀 Getting Started
@@ -49,9 +51,13 @@ Once complete, you will find `PhotoFrame.app` in the project root.
 
 ### 2. Selection & Preview
 - **Groups**: Use the folder rows in the left panel to separate photos into groups. Every photo in a group uses that group's settings when previewing and exporting.
-- **Group Controls**: Add or rename groups from the controls at the top of the left panel.
-- **Move to Group**: Select one or more photos, then use **Move to Group** or drag the selected photos onto another group.
+- **Group Reorder**: Drag a group row onto another group row to reorder the group list with the mouse.
+- **Top Controls**: Use the controls at the top of the left panel to add photos and add groups.
+- **Group Row Menu**: Rename or delete a group from the `...` menu on each group row.
+- **Move to Group**: Select one or more photos, then drag the selected photos onto another group.
+- **Drop Into Group**: Drop JPEG files directly onto a group row to add them to that group.
 - **Clear Photos / Undo Clear**: Clear only the photos while keeping your groups, then restore the most recent clear with **Undo Clear** if needed.
+- **Delete Selected Photos**: After multi-selecting photos, click the `×` button on any selected photo row to remove the whole selection in one action.
 - **Multi-Selection**: Use macOS standard controls to select items in the list (**Click** to select one, **Cmd+Click** to toggle, **Shift+Click** for range selection).
 - **Preview**: The preview panel shows the first photo in your current selection.
 - Most settings update the preview instantly, allowing you to fine-tune the look before processing.
@@ -63,26 +69,34 @@ Once complete, you will find `PhotoFrame.app` in the project root.
 - **Aspect Ratio**: Select a grid option for the outer frame. If using "Custom", enter the ratio values (e.g., `4:5`).
 - **Photo Position**: Use the Vertical and Horizontal sliders in the "Photo Position" section to offset the image within its designated area.
 - **Frame Width**: Adjust the amount of space around the image. Set it to `0` for a borderless edge.
+- **Photo Border**: In the "Frame Style" section, enable `Show Photo Border` to add a second border around the photo itself. The border always follows the photo's own ratio, and you can change both color and width.
 - **Text Layers**:
     - Add one or more layers in the "Text Layers" section.
     - Enter a template such as `{Camera} • {Lens}`.
     - Change font, color, text size, X/Y position, and alignment for each layer.
     - Toggle visibility with the eye icon, or remove a layer entirely.
-- **Available Tags**: `{Camera}`, `{Lens}`, `{Focal}`, `{FStop}`, `{Shutter}`, `{ISO}`, `{Date}`.
+- **Available Tags**: `{Camera}`, `{Lens}`, `{Focal}`, `{FStop}`, `{Shutter}`, `{ISO}`, `{Date}`, `{Year}`, `{Month}`, `{Day}`.
+- **Current Photo Tags**: The Text Layers section can show the actual metadata tag names found in the current preview photo.
 
 ### 4. Presets & Preferences
+- **Preset List**: Saved presets are shown in alphabetical order in the preset popover.
+- **Preset Preview**: Hover over a preset to preview it temporarily on the current group, then click to apply it.
 - **Save Preset**: Save the current layout from the preset menu in the settings header.
-- **Rename Preset**: Open a saved preset entry and choose **Rename Preset...**.
+- **Import / Export / Paste Presets**: Share presets as readable JSON files, import them from disk, or paste preset text directly.
+- **Overwrite Preset**: Use the `...` menu on a preset row to replace an existing preset with the current settings.
+- **Rename Preset**: Open the `...` menu on a preset row and choose **Rename Preset...**.
 - **Delete Preset**: Remove a single preset or clear them all from the same menu.
 - **Preferences**: Open **PhotoFrame > Settings...** to:
     - switch the display language between English and Japanese
+    - choose the UI color mode
     - choose the font picker mode: `Search` or `Full List`
 
-### 5. Processing
-- **Process Sel (...)**: Click this to process and export only the photos currently selected in the list (the count is shown in the button).
-- **Process All**: Click this to process every photo in your list, regardless of selection.
+### 5. Export
+- **Export Sel (...)**: Click this to export only the photos currently selected in the list (the count is shown in the button).
+- **Export All**: Click this to export every photo in your list, regardless of selection.
+- **Export Settings**: Before choosing the destination folder, a dialog lets you set output format, image size, `Long Edge Custom`, JPEG quality, filename prefix, and whether EXIF / metadata should be copied.
 - Select an output directory in the dialog.
-- The app will save your framed photos as new JPEGs prefixed with `framed_`.
+- The app saves files using the selected format and filename prefix.
 
 ## 🛡️ Security & Distribution
 
