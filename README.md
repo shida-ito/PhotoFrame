@@ -23,7 +23,7 @@ Stylish and minimal photo framing application for macOS. Add elegant borders and
 - **Fast Interactive Preview**: Cached previews and live text overlays keep text editing and positioning responsive.
 - **Preset Management**: Presets are shown in A-Z order, support hover preview before click-to-apply, and can be saved, overwritten, renamed, deleted, imported, exported, and cleared.
 - **Flexible Selection**: Finder-standard multi-selection (`Shift+Click`, `Cmd+Click`) for selective batch processing.
-- **Preferences**: Choose the UI language, color mode, and font picker mode from `PhotoFrame > Settings...`.
+- **Preferences**: Choose the UI language, color mode (`Midnight`, `Graphite`, `Black`, `Paper`, `Forest`), and font picker mode from `PhotoFrame > Settings...`.
 - **Multi-Window Workflow**: Open multiple windows to work on different photo sets in parallel.
 
 ## 🚀 Getting Started
@@ -88,7 +88,7 @@ Once complete, you will find `PhotoFrame.app` in the project root.
 - **Delete Preset**: Remove a single preset or clear them all from the same menu.
 - **Preferences**: Open **PhotoFrame > Settings...** to:
     - switch the display language between English and Japanese
-    - choose the UI color mode
+    - choose the UI color mode: `Midnight`, `Graphite`, `Black`, `Paper`, or `Forest`
     - choose the font picker mode: `Search` or `Full List`
 
 ### 5. Export

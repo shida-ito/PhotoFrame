@@ -2,6 +2,8 @@ import SwiftUI
 
 enum UITheme: String, CaseIterable, Identifiable, Sendable, Codable {
     case midnight
+    case graphite
+    case black
     case paper
     case forest
 
@@ -11,6 +13,10 @@ enum UITheme: String, CaseIterable, Identifiable, Sendable, Codable {
         switch self {
         case .midnight:
             return language == .japanese ? "ミッドナイト" : "Midnight"
+        case .graphite:
+            return language == .japanese ? "グラファイト" : "Graphite"
+        case .black:
+            return language == .japanese ? "ブラック" : "Black"
         case .paper:
             return language == .japanese ? "ペーパー" : "Paper"
         case .forest:
@@ -38,6 +44,44 @@ enum UITheme: String, CaseIterable, Identifiable, Sendable, Codable {
                 dropTargetFill: Color.white.opacity(0.03),
                 secondaryText: Color.white.opacity(0.5),
                 tertiaryText: Color.white.opacity(0.35)
+            )
+        case .graphite:
+            return UIThemeAppearance(
+                backgroundTop: Color(red: 0.11, green: 0.12, blue: 0.13),
+                backgroundBottom: Color(red: 0.18, green: 0.19, blue: 0.20),
+                accentStart: Color(red: 0.78, green: 0.80, blue: 0.82),
+                accentEnd: Color(red: 0.55, green: 0.58, blue: 0.61),
+                accent: Color(red: 0.82, green: 0.84, blue: 0.86),
+                accentSoft: Color(red: 0.82, green: 0.84, blue: 0.86).opacity(0.12),
+                panelFill: Color.white.opacity(0.04),
+                elevatedFill: Color.white.opacity(0.07),
+                divider: Color.white.opacity(0.09),
+                selectionFill: Color.white.opacity(0.08),
+                selectionStroke: Color.white.opacity(0.18),
+                previewSurface: Color(red: 0.08, green: 0.09, blue: 0.10),
+                dropTargetStroke: Color.white.opacity(0.15),
+                dropTargetFill: Color.white.opacity(0.03),
+                secondaryText: Color.white.opacity(0.5),
+                tertiaryText: Color.white.opacity(0.35)
+            )
+        case .black:
+            return UIThemeAppearance(
+                backgroundTop: Color(red: 0.03, green: 0.03, blue: 0.03),
+                backgroundBottom: Color(red: 0.08, green: 0.08, blue: 0.08),
+                accentStart: Color(red: 0.92, green: 0.92, blue: 0.92),
+                accentEnd: Color(red: 0.62, green: 0.62, blue: 0.62),
+                accent: Color.white.opacity(0.96),
+                accentSoft: Color.white.opacity(0.10),
+                panelFill: Color.white.opacity(0.03),
+                elevatedFill: Color.white.opacity(0.06),
+                divider: Color.white.opacity(0.08),
+                selectionFill: Color.white.opacity(0.07),
+                selectionStroke: Color.white.opacity(0.16),
+                previewSurface: Color.black,
+                dropTargetStroke: Color.white.opacity(0.14),
+                dropTargetFill: Color.white.opacity(0.025),
+                secondaryText: Color.white.opacity(0.48),
+                tertiaryText: Color.white.opacity(0.32)
             )
         case .paper:
             return UIThemeAppearance(
