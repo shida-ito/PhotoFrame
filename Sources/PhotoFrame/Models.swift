@@ -165,6 +165,26 @@ enum ProcessingStatus: Sendable {
     }
 }
 
+struct PhotoGroup: Identifiable {
+    var id = UUID()
+    var name: String
+    var isDefaultGroup = false
+    var isExpanded = true
+    var settingsState = FrameSettingsState()
+    var photoItems: [PhotoItem] = []
+
+    static func ungrouped() -> PhotoGroup {
+        PhotoGroup(name: "", isDefaultGroup: true)
+    }
+
+    func displayName(_ language: AppLanguage) -> String {
+        if name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return language == .japanese ? "未分類" : "Ungrouped"
+        }
+        return name
+    }
+}
+
 // MARK: - Presets & Codable
 
 struct CodableColor: Codable, Equatable, Sendable {
@@ -172,6 +192,13 @@ struct CodableColor: Codable, Equatable, Sendable {
     var green: CGFloat
     var blue: CGFloat
     var alpha: CGFloat
+
+    init(red: CGFloat, green: CGFloat, blue: CGFloat, alpha: CGFloat) {
+        self.red = red
+        self.green = green
+        self.blue = blue
+        self.alpha = alpha
+    }
 
     init(color: Color) {
         let ns = NSColor(color).usingColorSpace(.sRGB) ?? NSColor(color)
@@ -186,18 +213,108 @@ struct CodableColor: Codable, Equatable, Sendable {
     }
 }
 
+struct FrameConfiguration: Equatable, Codable, Sendable {
+    var aspectRatio: AspectRatio = .square
+    var customWidth: String = "4"
+    var customHeight: String = "5"
+    var frameColor: CodableColor = CodableColor(red: 1, green: 1, blue: 1, alpha: 1)
+    var paddingRatio: CGFloat = 0.05
+    var photoVOffset: Double = 0.5
+    var photoHOffset: Double = 0.5
+    var innerPadding: CGFloat = 0.3
+    var textLayers: [TextLayer] = [.defaultExif]
+
+    var customRatio: CGFloat? {
+        guard let w = Double(customWidth), let h = Double(customHeight), w > 0, h > 0 else { return nil }
+        return CGFloat(w / h)
+    }
+
+    var effectiveRatio: CGFloat? {
+        if aspectRatio == .custom { return customRatio }
+        return aspectRatio.numericRatio
+    }
+
+    var backgroundPreviewSignature: PreviewBackgroundSignature {
+        PreviewBackgroundSignature(
+            aspectRatio: aspectRatio,
+            customWidth: customWidth,
+            customHeight: customHeight,
+            frameColor: frameColor,
+            paddingRatio: paddingRatio,
+            photoVOffset: photoVOffset,
+            photoHOffset: photoHOffset,
+            innerPadding: innerPadding
+        )
+    }
+
+    var colorValue: Color {
+        get { frameColor.color }
+        set { frameColor = CodableColor(color: newValue) }
+    }
+}
+
 struct Preset: Identifiable, Codable, Equatable, Sendable {
     var id = UUID()
     var name: String
-    var aspectRatio: AspectRatio
-    var customWidth: String
-    var customHeight: String
-    var frameColor: CodableColor
-    var paddingRatio: CGFloat
-    var photoVOffset: Double
-    var photoHOffset: Double
-    var innerPadding: CGFloat
-    var textLayers: [TextLayer]
+    var configuration: FrameConfiguration
+
+    enum CodingKeys: String, CodingKey {
+        case id, name
+        case configuration
+
+        // Removed orientation-based preset keys kept for backward compatibility
+        case usesOrientationBasedSettings
+        case defaultConfiguration, portraitConfiguration, landscapeConfiguration, squareConfiguration
+
+        // Legacy flat preset keys
+        case aspectRatio, customWidth, customHeight, frameColor, paddingRatio
+        case photoVOffset, photoHOffset, innerPadding, textLayers
+    }
+
+    init(
+        id: UUID = UUID(),
+        name: String,
+        configuration: FrameConfiguration
+    ) {
+        self.id = id
+        self.name = name
+        self.configuration = configuration
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = try container.decode(String.self, forKey: .name)
+
+        if let configuration = try container.decodeIfPresent(FrameConfiguration.self, forKey: .configuration) {
+            self.configuration = configuration
+            return
+        }
+
+        if let defaultConfiguration = try container.decodeIfPresent(FrameConfiguration.self, forKey: .defaultConfiguration) {
+            configuration = defaultConfiguration
+            return
+        }
+
+        configuration = FrameConfiguration(
+            aspectRatio: try container.decode(AspectRatio.self, forKey: .aspectRatio),
+            customWidth: try container.decode(String.self, forKey: .customWidth),
+            customHeight: try container.decode(String.self, forKey: .customHeight),
+            frameColor: try container.decode(CodableColor.self, forKey: .frameColor),
+            paddingRatio: try container.decode(CGFloat.self, forKey: .paddingRatio),
+            photoVOffset: try container.decode(Double.self, forKey: .photoVOffset),
+            photoHOffset: try container.decode(Double.self, forKey: .photoHOffset),
+            innerPadding: try container.decode(CGFloat.self, forKey: .innerPadding),
+            textLayers: try container.decode([TextLayer].self, forKey: .textLayers)
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(configuration, forKey: .configuration)
+    }
 }
 
 // MARK: - Text Layer
@@ -255,6 +372,16 @@ struct TextLayer: Identifiable, Equatable, Sendable, Codable {
         try container.encode(hAlignment, forKey: .hAlignment)
         try container.encode(isVisible, forKey: .isVisible)
     }
+
+    static let defaultExif = TextLayer(
+        textTemplate: "{Camera} • {Lens} • {Focal}mm • f/{FStop} • {Shutter} • ISO {ISO}",
+        fontName: "Helvetica Neue",
+        fontSizePercent: 1.8,
+        textColor: .gray,
+        hOffset: 0.5,
+        vOffset: 0.9,
+        hAlignment: .center
+    )
 }
 
 // MARK: - Exif Display Fields
@@ -294,87 +421,76 @@ struct PreviewBackgroundSignature: Equatable {
     let innerPadding: CGFloat
 }
 
+struct FrameSettingsState: Equatable, Codable, Sendable {
+    var configuration = FrameConfiguration()
+
+    mutating func setEditorConfiguration(_ configuration: FrameConfiguration) {
+        self.configuration = configuration
+    }
+}
+
+struct PersistedPhotoGroup: Identifiable, Codable, Sendable {
+    var id: UUID
+    var name: String
+    var isDefaultGroup: Bool
+    var isExpanded: Bool
+    var settingsState: FrameSettingsState
+    var photoPaths: [String]
+}
+
+struct PersistedWorkspace: Codable, Sendable {
+    var selectedGroupID: UUID?
+    var groups: [PersistedPhotoGroup]
+}
+
 // MARK: - Frame Settings
 
 @MainActor
 final class FrameSettings: ObservableObject {
-    @Published var aspectRatio: AspectRatio = .square
-    @Published var customWidth: String = "4"
-    @Published var customHeight: String = "5"
-    @Published var frameColor: Color = .white
-    @Published var paddingRatio: CGFloat = 0.05
-    
-    // Positioning
-    @Published var photoVOffset: Double = 0.5 // 0.0 = Top, 0.5 = Center, 1.0 = Bottom
-    @Published var photoHOffset: Double = 0.5 // 0.0 = Left, 0.5 = Center, 1.0 = Right
-    @Published var innerPadding: CGFloat = 0.3 // ratio relative to padding
-
-    // Layers
-    @Published var textLayers: [TextLayer] = [
-        TextLayer(
-            textTemplate: "{Camera} • {Lens} • {Focal}mm • f/{FStop} • {Shutter} • ISO {ISO}",
-            fontName: "Helvetica Neue",
-            fontSizePercent: 1.8,
-            textColor: .gray,
-            hOffset: 0.5,
-            vOffset: 0.9,
-            hAlignment: .center
-        )
-    ]
-
-    var customRatio: CGFloat? {
-        guard let w = Double(customWidth), let h = Double(customHeight), w > 0, h > 0 else { return nil }
-        return CGFloat(w / h)
-    }
-
-    var effectiveRatio: CGFloat? {
-        if aspectRatio == .custom { return customRatio }
-        return aspectRatio.numericRatio
-    }
-
-    var backgroundPreviewSignature: PreviewBackgroundSignature {
-        PreviewBackgroundSignature(
-            aspectRatio: aspectRatio,
-            customWidth: customWidth,
-            customHeight: customHeight,
-            frameColor: CodableColor(color: frameColor),
-            paddingRatio: paddingRatio,
-            photoVOffset: photoVOffset,
-            photoHOffset: photoHOffset,
-            innerPadding: innerPadding
-        )
-    }
+    @Published private var configuration = FrameConfiguration()
 
     static let availableFonts: [String] = {
         NSFontManager.shared.availableFontFamilies.sorted()
     }()
+
+    var state: FrameSettingsState {
+        get {
+            FrameSettingsState(configuration: configuration)
+        }
+        set {
+            configuration = newValue.configuration
+        }
+    }
+
+    var editorConfigurationBinding: Binding<FrameConfiguration> {
+        Binding(
+            get: { self.editorConfiguration },
+            set: { self.setEditorConfiguration($0) }
+        )
+    }
+
+    var editorConfiguration: FrameConfiguration {
+        configuration
+    }
+
+    private func setEditorConfiguration(_ configuration: FrameConfiguration) {
+        self.configuration = configuration
+    }
     
     // MARK: - Preset Management
     
     func apply(preset: Preset) {
-        self.aspectRatio = preset.aspectRatio
-        self.customWidth = preset.customWidth
-        self.customHeight = preset.customHeight
-        self.frameColor = preset.frameColor.color
-        self.paddingRatio = preset.paddingRatio
-        self.photoVOffset = preset.photoVOffset
-        self.photoHOffset = preset.photoHOffset
-        self.innerPadding = preset.innerPadding
-        self.textLayers = preset.textLayers
+        configuration = preset.configuration
     }
 
     func createPreset(name: String) -> Preset {
         Preset(
             name: name,
-            aspectRatio: aspectRatio,
-            customWidth: customWidth,
-            customHeight: customHeight,
-            frameColor: CodableColor(color: frameColor),
-            paddingRatio: paddingRatio,
-            photoVOffset: photoVOffset,
-            photoHOffset: photoHOffset,
-            innerPadding: innerPadding,
-            textLayers: textLayers
+            configuration: configuration
         )
+    }
+
+    func apply(state: FrameSettingsState) {
+        self.state = state
     }
 }

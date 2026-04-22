@@ -16,6 +16,8 @@ Stylish and minimal photo framing application for macOS. Add elegant borders and
     - Add multiple text layers.
     - Use EXIF tags such as `{Camera}`, `{Lens}`, `{Focal}`, `{FStop}`, `{Shutter}`, `{ISO}`, and `{Date}` inside each template.
     - Control font, color, size, X/Y position, alignment, and visibility per layer.
+- **Photo Groups**: Organize photos into groups in the left panel and apply one shared layout setting set per group.
+- **Workspace Restore**: Reopen the latest group structure, settings, and photo assignments the next time you launch the app.
 - **Fast Interactive Preview**: Cached previews and live text overlays keep text editing and positioning responsive.
 - **Preset Management**: Save, rename, delete, and clear reusable layout presets.
 - **Flexible Selection**: Finder-standard multi-selection (`Shift+Click`, `Cmd+Click`) for selective batch processing.
@@ -46,6 +48,10 @@ Once complete, you will find `PhotoFrame.app` in the project root.
 - **Browse**: Click the "+" button or the empty state zone to select files via the file picker.
 
 ### 2. Selection & Preview
+- **Groups**: Use the folder rows in the left panel to separate photos into groups. Every photo in a group uses that group's settings when previewing and exporting.
+- **Group Controls**: Add or rename groups from the controls at the top of the left panel.
+- **Move to Group**: Select one or more photos, then use **Move to Group** or drag the selected photos onto another group.
+- **Clear Photos / Undo Clear**: Clear only the photos while keeping your groups, then restore the most recent clear with **Undo Clear** if needed.
 - **Multi-Selection**: Use macOS standard controls to select items in the list (**Click** to select one, **Cmd+Click** to toggle, **Shift+Click** for range selection).
 - **Preview**: The preview panel shows the first photo in your current selection.
 - Most settings update the preview instantly, allowing you to fine-tune the look before processing.
@@ -53,6 +59,7 @@ Once complete, you will find `PhotoFrame.app` in the project root.
 - **Multiple Windows**: Use **File > New Window** or `Cmd+N` to open another working window.
 
 ### 3. Configuring Frame & Text
+- **Group Settings**: The settings panel always edits the currently selected group. Use separate groups when you want different layouts for different subsets of photos.
 - **Aspect Ratio**: Select a grid option for the outer frame. If using "Custom", enter the ratio values (e.g., `4:5`).
 - **Photo Position**: Use the Vertical and Horizontal sliders in the "Photo Position" section to offset the image within its designated area.
 - **Frame Width**: Adjust the amount of space around the image. Set it to `0` for a borderless edge.

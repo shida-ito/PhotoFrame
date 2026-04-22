@@ -18,14 +18,28 @@ enum L10n {
     private static let tagTokens = "{Camera}, {Lens}, {Focal}, {FStop}, {Shutter}, {ISO}, {Date}"
 
     static func clear(_ language: AppLanguage) -> String { language == .japanese ? "クリア" : "Clear" }
+    static func clearPhotos(_ language: AppLanguage) -> String { language == .japanese ? "写真をクリア" : "Clear Photos" }
+    static func undoClear(_ language: AppLanguage) -> String { language == .japanese ? "元に戻す" : "Undo Clear" }
     static func dropJPEGFilesHere(_ language: AppLanguage) -> String { language == .japanese ? "JPEG ファイルをここにドロップ" : "Drop JPEG files here" }
     static func photoCount(_ count: Int, _ language: AppLanguage) -> String { language == .japanese ? "\(count) 枚" : "\(count) photo(s)" }
+    static func groupName(_ language: AppLanguage) -> String { language == .japanese ? "グループ名" : "Group Name" }
+    static func addGroup(_ language: AppLanguage) -> String { language == .japanese ? "グループを追加" : "Add Group" }
+    static func addPhotos(_ language: AppLanguage) -> String { language == .japanese ? "写真を追加" : "Add Photos" }
+    static func newGroupTitle(_ language: AppLanguage) -> String { language == .japanese ? "グループを追加" : "New Group" }
+    static func newGroupMessage(_ language: AppLanguage) -> String { language == .japanese ? "同じ設定をまとめたい写真用のグループ名を入力してください。" : "Enter a name for the photo group." }
+    static func renameGroupTitle(_ language: AppLanguage) -> String { language == .japanese ? "グループ名を変更" : "Rename Group" }
+    static func renameGroupMessage(_ language: AppLanguage) -> String { language == .japanese ? "グループ名を変更します。" : "Update the group name." }
+    static func renameGroupMenu(_ language: AppLanguage) -> String { language == .japanese ? "名前を変更..." : "Rename Group..." }
+    static func renameGroupAction(_ language: AppLanguage) -> String { language == .japanese ? "名前変更" : "Rename Group" }
+    static func deleteGroup(_ language: AppLanguage) -> String { language == .japanese ? "グループを削除" : "Delete Group" }
+    static func moveToGroup(_ language: AppLanguage) -> String { language == .japanese ? "グループへ移動" : "Move to Group" }
     static func processSelected(_ count: Int, _ language: AppLanguage) -> String { language == .japanese ? "選択を処理 (\(count))" : "Process Sel (\(count))" }
     static func processing(_ language: AppLanguage) -> String { language == .japanese ? "処理中…" : "Processing…" }
     static func processAll(_ language: AppLanguage) -> String { language == .japanese ? "すべて処理" : "Process All" }
     static func preview(_ language: AppLanguage) -> String { language == .japanese ? "プレビュー" : "Preview" }
     static func selectPhotoToPreview(_ language: AppLanguage) -> String { language == .japanese ? "写真を選択するとプレビューを表示します" : "Select a photo to preview" }
     static func settings(_ language: AppLanguage) -> String { language == .japanese ? "設定" : "Settings" }
+    static func editingGroup(_ groupName: String, _ language: AppLanguage) -> String { language == .japanese ? "編集中のグループ: \(groupName)" : "Editing Group: \(groupName)" }
     static func frameWidth(_ language: AppLanguage) -> String { language == .japanese ? "フレーム幅" : "Frame Width" }
     static func previewQuality(_ language: AppLanguage) -> String { language == .japanese ? "プレビュー品質" : "Preview Quality" }
     static func previewFast(_ language: AppLanguage) -> String { language == .japanese ? "高速 (400px)" : "Fast (400px)" }
