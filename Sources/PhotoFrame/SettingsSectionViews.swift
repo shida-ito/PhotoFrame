@@ -328,6 +328,15 @@ struct TextLayerEditorRow: View {
         resolvedThemeAppearance(uiThemeRaw)
     }
 
+    private var fontFamilyBinding: Binding<String> {
+        Binding(
+            get: { FrameSettings.resolvedFontFamilyName(for: layer.fontName) },
+            set: { familyName in
+                layer.fontName = FrameSettings.resolveFontName(familyName: familyName)
+            }
+        )
+    }
+
     var body: some View {
         DisclosureGroup {
             VStack(alignment: .leading, spacing: 10) {
@@ -347,10 +356,12 @@ struct TextLayerEditorRow: View {
                 }
 
                 if fontSelectionDisplayMode == .classic {
-                    ClassicFontPicker(selection: $layer.fontName, language: language)
+                    ClassicFontPicker(selection: fontFamilyBinding, language: language)
                 } else {
-                    SearchableFontPicker(selection: $layer.fontName, language: language)
+                    SearchableFontPicker(selection: fontFamilyBinding, language: language)
                 }
+
+                FontFacePicker(selection: $layer.fontName, language: language)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(L10n.textSize(language))
@@ -433,13 +444,29 @@ struct ClassicFontPicker: View {
     let language: AppLanguage
 
     var body: some View {
-        Picker(L10n.font(language), selection: $selection) {
-            ForEach(FrameSettings.availableFonts, id: \.self) { fontName in
-                Text(fontName)
-                    .font(.custom(fontName, size: 12))
-                    .tag(fontName)
+        VStack(alignment: .leading, spacing: 6) {
+            Text(L10n.fontFamily(language))
+                .font(.caption2)
+                .foregroundColor(.white.opacity(0.4))
+
+            Picker("", selection: $selection) {
+                ForEach(FrameSettings.availableFonts, id: \.self) { fontName in
+                    FontFamilyLabel(fontName: fontName)
+                        .tag(fontName)
+                }
             }
+            .labelsHidden()
         }
+    }
+}
+
+private struct FontFamilyLabel: View {
+    let fontName: String
+
+    var body: some View {
+        Text(fontName)
+            .font(.custom(FrameSettings.resolveFontName(familyName: fontName), size: 12))
+            .lineLimit(1)
     }
 }
 
@@ -470,15 +497,14 @@ struct SearchableFontPicker: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(L10n.font(language))
+            Text(L10n.fontFamily(language))
                 .font(.caption2)
                 .foregroundColor(.white.opacity(0.4))
 
             Button(action: presentPopover) {
                 HStack(spacing: 8) {
-                    Text(selection)
+                    FontFamilyLabel(fontName: selection)
                         .foregroundColor(.white)
-                        .lineLimit(1)
                     Spacer()
                     Image(systemName: "magnifyingglass")
                         .foregroundColor(.white.opacity(0.4))
@@ -505,7 +531,7 @@ struct SearchableFontPicker: View {
                             .font(.caption2)
                             .foregroundColor(.secondary)
                         Text(selection)
-                            .font(.custom(selection, size: 14))
+                            .font(.custom(FrameSettings.resolveFontName(familyName: selection), size: 14))
                             .lineLimit(1)
                     }
 
@@ -523,9 +549,8 @@ struct SearchableFontPicker: View {
                                             Image(systemName: fontName == selection ? "checkmark" : "circle")
                                                 .font(.system(size: 10, weight: .semibold))
                                                 .foregroundColor(fontName == selection ? theme.accent : .clear)
-                                            Text(fontName)
+                                            FontFamilyLabel(fontName: fontName)
                                                 .foregroundColor(.primary)
-                                                .lineLimit(1)
                                             Spacer()
                                         }
                                         .padding(.horizontal, 8)
@@ -555,5 +580,61 @@ struct SearchableFontPicker: View {
     private func select(_ fontName: String) {
         selection = fontName
         isPresented = false
+    }
+}
+
+struct FontFacePicker: View {
+    @Binding var selection: String
+    let language: AppLanguage
+
+    private var faceOptions: [FontFaceOption] {
+        FrameSettings.faceOptions(for: selection)
+    }
+
+    private var selectedFaceBinding: Binding<String> {
+        Binding(
+            get: {
+                FrameSettings.selectedFace(for: selection)?.postScriptName ??
+                faceOptions.first?.postScriptName ??
+                selection
+            },
+            set: { selection = $0 }
+        )
+    }
+
+    private var selectedFaceName: String {
+        FrameSettings.resolvedFontFaceName(for: selection)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(L10n.fontFace(language))
+                .font(.caption2)
+                .foregroundColor(.white.opacity(0.4))
+
+            if faceOptions.count <= 1 {
+                HStack(spacing: 8) {
+                    Text(selectedFaceName)
+                        .foregroundColor(.white.opacity(0.85))
+                        .lineLimit(1)
+                    Spacer()
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.05)))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+                )
+            } else {
+                Picker("", selection: selectedFaceBinding) {
+                    ForEach(faceOptions) { face in
+                        Text(face.displayName).tag(face.postScriptName)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+            }
+        }
     }
 }

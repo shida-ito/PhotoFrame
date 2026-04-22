@@ -702,13 +702,80 @@ struct PersistedWorkspace: Codable, Sendable {
 
 // MARK: - Frame Settings
 
+struct FontFaceOption: Identifiable, Hashable, Sendable {
+    let postScriptName: String
+    let displayName: String
+    let weight: Int
+    let traits: Int
+
+    var id: String { postScriptName }
+}
+
+struct FontFamilyOption: Identifiable, Hashable, Sendable {
+    let familyName: String
+    let faces: [FontFaceOption]
+
+    var id: String { familyName }
+}
+
 @MainActor
 final class FrameSettings: ObservableObject {
     @Published private var configuration = FrameConfiguration()
 
-    static let availableFonts: [String] = {
-        NSFontManager.shared.availableFontFamilies.sorted()
+    static let availableFontFamilies: [FontFamilyOption] = {
+        let fontManager = NSFontManager.shared
+
+        return fontManager.availableFontFamilies.sorted().map { familyName in
+            let members = fontManager.availableMembers(ofFontFamily: familyName) ?? []
+            var seenNames = Set<String>()
+            var faces: [FontFaceOption] = []
+
+            for member in members {
+                guard member.count >= 2,
+                      let postScriptName = member[0] as? String,
+                      let displayName = member[1] as? String,
+                      seenNames.insert(postScriptName).inserted else {
+                    continue
+                }
+
+                let weight = (member.count > 2 ? (member[2] as? NSNumber)?.intValue ?? member[2] as? Int : nil) ?? 5
+                let traits = (member.count > 3 ? (member[3] as? NSNumber)?.intValue ?? member[3] as? Int : nil) ?? 0
+
+                faces.append(
+                    FontFaceOption(
+                        postScriptName: postScriptName,
+                        displayName: displayName,
+                        weight: weight,
+                        traits: traits
+                    )
+                )
+            }
+
+            if faces.isEmpty {
+                faces = [FontFaceOption(postScriptName: familyName, displayName: "Regular", weight: 5, traits: 0)]
+            }
+
+            faces.sort { lhs, rhs in
+                let lhsRank = preferredFaceRank(for: lhs)
+                let rhsRank = preferredFaceRank(for: rhs)
+                if lhsRank != rhsRank {
+                    return lhsRank < rhsRank
+                }
+
+                let lhsWeightDelta = abs(lhs.weight - 5)
+                let rhsWeightDelta = abs(rhs.weight - 5)
+                if lhsWeightDelta != rhsWeightDelta {
+                    return lhsWeightDelta < rhsWeightDelta
+                }
+
+                return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
+            }
+
+            return FontFamilyOption(familyName: familyName, faces: faces)
+        }
     }()
+
+    static let availableFonts: [String] = availableFontFamilies.map(\.familyName)
 
     var state: FrameSettingsState {
         get {
@@ -738,6 +805,103 @@ final class FrameSettings: ObservableObject {
     
     func apply(preset: Preset) {
         configuration = preset.configuration
+    }
+
+    static func resolvedFontFamilyName(for fontName: String) -> String {
+        fontFamily(for: fontName)?.familyName ?? fontName
+    }
+
+    static func resolvedFontFaceName(for fontName: String) -> String {
+        selectedFace(for: fontName)?.displayName ?? "Regular"
+    }
+
+    static func faceOptions(for fontName: String) -> [FontFaceOption] {
+        fontFamily(for: fontName)?.faces ?? []
+    }
+
+    static func selectedFace(for fontName: String) -> FontFaceOption? {
+        guard let family = fontFamily(for: fontName) else { return nil }
+
+        if let exact = family.faces.first(where: { $0.postScriptName == fontName }) {
+            return exact
+        }
+
+        if let resolvedFont = NSFont(name: fontName, size: 12),
+           let exact = family.faces.first(where: { $0.postScriptName == resolvedFont.fontName }) {
+            return exact
+        }
+
+        return defaultFace(for: family.familyName)
+    }
+
+    static func defaultFace(for familyName: String) -> FontFaceOption? {
+        availableFontFamilies
+            .first(where: { $0.familyName == familyName })?
+            .faces
+            .first
+    }
+
+    static func resolveFontName(familyName: String, preferredFacePostScriptName: String? = nil) -> String {
+        guard let family = availableFontFamilies.first(where: { $0.familyName == familyName }) else {
+            return familyName
+        }
+
+        if let preferredFacePostScriptName,
+           family.faces.contains(where: { $0.postScriptName == preferredFacePostScriptName }) {
+            return preferredFacePostScriptName
+        }
+
+        return family.faces.first?.postScriptName ?? familyName
+    }
+
+    private static func fontFamily(for fontName: String) -> FontFamilyOption? {
+        if let exactFamily = availableFontFamilies.first(where: { $0.familyName == fontName }) {
+            return exactFamily
+        }
+
+        if let resolvedFont = NSFont(name: fontName, size: 12),
+           let familyName = resolvedFont.familyName,
+           let family = availableFontFamilies.first(where: { $0.familyName == familyName }) {
+            return family
+        }
+
+        return availableFontFamilies.first { family in
+            family.faces.contains(where: { $0.postScriptName == fontName })
+        }
+    }
+
+    private static func preferredFaceRank(for face: FontFaceOption) -> Int {
+        let lowerName = face.displayName.lowercased()
+
+        if ["regular", "roman", "book", "plain"].contains(lowerName) {
+            return 0
+        }
+
+        if lowerName.contains("regular") || lowerName.contains("roman") || lowerName.contains("book") || lowerName.contains("plain") {
+            return 1
+        }
+
+        if lowerName.contains("medium") {
+            return 2
+        }
+
+        if lowerName.contains("light") {
+            return 3
+        }
+
+        if lowerName.contains("semibold") || lowerName.contains("demibold") {
+            return 4
+        }
+
+        if lowerName.contains("bold") {
+            return 5
+        }
+
+        if lowerName.contains("italic") || lowerName.contains("oblique") {
+            return 6
+        }
+
+        return 7
     }
 
     func createPreset(name: String) -> Preset {

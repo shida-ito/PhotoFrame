@@ -86,6 +86,8 @@ enum L10n {
     static func removeLayer(_ language: AppLanguage) -> String { language == .japanese ? "レイヤーを削除" : "Remove Layer" }
     static func emptyLayer(_ language: AppLanguage) -> String { language == .japanese ? "空のレイヤー" : "Empty Layer" }
     static func font(_ language: AppLanguage) -> String { language == .japanese ? "フォント" : "Font" }
+    static func fontFamily(_ language: AppLanguage) -> String { language == .japanese ? "フォントファミリー" : "Font Family" }
+    static func fontFace(_ language: AppLanguage) -> String { language == .japanese ? "フォントフェイス" : "Font Face" }
     static func searchFonts(_ language: AppLanguage) -> String { language == .japanese ? "フォントを検索" : "Search fonts" }
     static func noFontsFound(_ language: AppLanguage) -> String { language == .japanese ? "該当するフォントがありません" : "No fonts found" }
     static func savedPresets(_ language: AppLanguage) -> String { language == .japanese ? "保存済みプリセット" : "Saved Presets" }
