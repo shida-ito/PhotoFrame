@@ -141,6 +141,58 @@ struct LiveVideoPreviewCanvas: View {
     }
 }
 
+struct SlideshowVideoPreviewCanvas: View {
+    let url: URL
+    var isMuted = true
+    var loops = true
+    var onPlaybackEnded: (() -> Void)? = nil
+
+    @State private var sourceSize: CGSize?
+
+    var body: some View {
+        GeometryReader { geometry in
+            let resolvedSize = sourceSize ?? CGSize(
+                width: max(geometry.size.width, 1),
+                height: max(geometry.size.height, 1)
+            )
+            let scale = min(
+                geometry.size.width / max(resolvedSize.width, 1),
+                geometry.size.height / max(resolvedSize.height, 1)
+            )
+            let fittedSize = CGSize(
+                width: resolvedSize.width * scale,
+                height: resolvedSize.height * scale
+            )
+
+            LoopingVideoPlayerView(
+                url: url,
+                isMuted: isMuted,
+                loops: loops,
+                onPlaybackEnded: onPlaybackEnded
+            )
+            .frame(width: fittedSize.width, height: fittedSize.height)
+            .position(x: geometry.size.width / 2.0, y: geometry.size.height / 2.0)
+            .task(id: url) {
+                sourceSize = await Self.loadDisplaySize(from: url)
+            }
+        }
+    }
+
+    private static func loadDisplaySize(from url: URL) async -> CGSize? {
+        let asset = AVURLAsset(url: url)
+        guard let track = try? await asset.loadTracks(withMediaType: .video).first,
+              let naturalSize = try? await track.load(.naturalSize),
+              let preferredTransform = try? await track.load(.preferredTransform) else {
+            return nil
+        }
+
+        let rect = CGRect(origin: .zero, size: naturalSize)
+            .applying(preferredTransform)
+            .standardized
+        return CGSize(width: max(abs(rect.width), 1), height: max(abs(rect.height), 1))
+    }
+}
+
 struct LoopingVideoPlayerView: NSViewRepresentable {
     let url: URL
     var videoComposition: AVVideoComposition? = nil

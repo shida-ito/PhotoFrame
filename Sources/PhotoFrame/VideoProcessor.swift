@@ -136,8 +136,7 @@ struct VideoProcessor {
             : []
 
         let videoRect = videoFrameRect(
-            imageRect: layout.imageRect,
-            renderSize: CGSize(width: layout.canvasWidth, height: layout.canvasHeight)
+            imageRect: layout.imageRect
         )
         let renderSize = CGSize(
             width: layout.canvasWidth,
@@ -172,6 +171,124 @@ struct VideoProcessor {
         }
 
         try await exportSession.export(to: outputURL, as: .mov)
+    }
+
+    static func processSlideshowSegment(
+        inputURL: URL,
+        outputURL: URL,
+        options: ImageProcessor.Options,
+        exportSettings: ExportSettings,
+        targetDuration: CMTime,
+        includeOriginalAudio: Bool,
+        originalAudioVolume: Double,
+        forcedLayout: ImageProcessor.Layout? = nil
+    ) async throws -> CGSize {
+        let asset = AVURLAsset(url: inputURL)
+        let videoTracks = try await asset.loadTracks(withMediaType: .video)
+
+        guard let sourceVideoTrack = videoTracks.first else {
+            throw VideoProcessingError.cannotLoadVideo
+        }
+
+        let assetDuration = try await asset.load(.duration)
+        let naturalSize = try await sourceVideoTrack.load(.naturalSize)
+        let preferredTransform = try await sourceVideoTrack.load(.preferredTransform)
+        let nominalFrameRate = try await sourceVideoTrack.load(.nominalFrameRate)
+
+        let composition = AVMutableComposition()
+        guard let compositionVideoTrack = composition.addMutableTrack(
+            withMediaType: .video,
+            preferredTrackID: kCMPersistentTrackID_Invalid
+        ) else {
+            throw VideoProcessingError.cannotCreateComposition
+        }
+
+        try insertLoopedTimeRange(
+            duration: targetDuration,
+            sourceDuration: assetDuration,
+            sourceTrack: sourceVideoTrack,
+            compositionTrack: compositionVideoTrack
+        )
+
+        var audioParameters: [AVAudioMixInputParameters] = []
+        if includeOriginalAudio, originalAudioVolume > 0 {
+            let audioTracks = try await asset.loadTracks(withMediaType: .audio)
+            for audioTrack in audioTracks {
+                guard let compositionAudioTrack = composition.addMutableTrack(
+                    withMediaType: .audio,
+                    preferredTrackID: kCMPersistentTrackID_Invalid
+                ) else {
+                    continue
+                }
+
+                try insertLoopedTimeRange(
+                    duration: targetDuration,
+                    sourceDuration: assetDuration,
+                    sourceTrack: audioTrack,
+                    compositionTrack: compositionAudioTrack
+                )
+
+                let parameters = AVMutableAudioMixInputParameters(track: compositionAudioTrack)
+                parameters.setVolume(Float(min(max(originalAudioVolume, 0), 1)), at: .zero)
+                audioParameters.append(parameters)
+            }
+        }
+
+        let orientedSize = orientedVideoSize(
+            naturalSize: naturalSize,
+            preferredTransform: preferredTransform
+        )
+        let layout = forcedLayout ?? ImageProcessor.scaledLayout(
+            ImageProcessor.calculateLayout(
+                imageWidth: max(Int(orientedSize.width.rounded()), 1),
+                imageHeight: max(Int(orientedSize.height.rounded()), 1),
+                options: options
+            ),
+            maxLongEdge: exportSettings.maxLongEdge
+        )
+        let renderSize = CGSize(
+            width: layout.canvasWidth,
+            height: layout.canvasHeight
+        )
+        let exifInfo = await metadataInfo(
+            asset: asset,
+            url: inputURL,
+            durationSeconds: targetDuration.seconds.isFinite ? targetDuration.seconds : 0
+        )
+        let videoRect = videoFrameRect(
+            imageRect: layout.imageRect
+        )
+        let videoComposition = try makeExportVideoComposition(
+            asset: composition,
+            naturalSize: naturalSize,
+            preferredTransform: preferredTransform,
+            nominalFrameRate: nominalFrameRate,
+            renderSize: renderSize,
+            targetRect: videoRect,
+            layout: layout,
+            options: options,
+            exifInfo: exifInfo
+        )
+
+        try? FileManager.default.removeItem(at: outputURL)
+
+        guard let exportSession = AVAssetExportSession(
+            asset: composition,
+            presetName: AVAssetExportPresetHighestQuality
+        ) else {
+            throw VideoProcessingError.cannotCreateExportSession
+        }
+
+        exportSession.shouldOptimizeForNetworkUse = false
+        exportSession.videoComposition = videoComposition
+        if !audioParameters.isEmpty {
+            let audioMix = AVMutableAudioMix()
+            audioMix.inputParameters = audioParameters
+            exportSession.audioMix = audioMix
+        }
+
+        try await exportSession.export(to: outputURL, as: .mov)
+        return renderSize
     }
 
     static func makePreviewVideoComposition(
@@ -234,6 +351,27 @@ struct VideoProcessor {
         }
 
         return CMTime(value: 1, timescale: Int32(max(nominalFrameRate.rounded(), 1)))
+    }
+
+    private static func insertLoopedTimeRange(
+        duration: CMTime,
+        sourceDuration: CMTime,
+        sourceTrack: AVAssetTrack,
+        compositionTrack: AVMutableCompositionTrack
+    ) throws {
+        guard duration > .zero, sourceDuration > .zero else { return }
+
+        var cursor = CMTime.zero
+        while cursor < duration {
+            let remaining = duration - cursor
+            let segmentDuration = min(sourceDuration, remaining)
+            try compositionTrack.insertTimeRange(
+                CMTimeRange(start: .zero, duration: segmentDuration),
+                of: sourceTrack,
+                at: cursor
+            )
+            cursor = cursor + segmentDuration
+        }
     }
 
     private static func makeExportVideoComposition(
@@ -353,15 +491,9 @@ struct VideoProcessor {
     }
 
     private static func videoFrameRect(
-        imageRect: CGRect,
-        renderSize: CGSize
+        imageRect: CGRect
     ) -> CGRect {
-        CGRect(
-            x: imageRect.minX,
-            y: renderSize.height - imageRect.maxY,
-            width: imageRect.width,
-            height: imageRect.height
-        )
+        imageRect
     }
 
     private static func metadataInfo(

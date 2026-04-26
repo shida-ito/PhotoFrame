@@ -131,6 +131,22 @@ enum ExportSizePreset: String, CaseIterable, Identifiable, Sendable, Codable {
     }
 }
 
+enum SlideshowVideoDurationMode: String, CaseIterable, Identifiable, Sendable, Codable {
+    case original
+    case specified
+
+    var id: String { rawValue }
+
+    func title(_ language: AppLanguage) -> String {
+        switch self {
+        case .original:
+            return language == .japanese ? "元の長さ" : "Original Duration"
+        case .specified:
+            return language == .japanese ? "指定秒数" : "Specified Seconds"
+        }
+    }
+}
+
 struct ExportSettings: Equatable, Sendable, Codable {
     var format: ExportFormat = .jpeg
     var jpegQuality: Double = 0.95
@@ -139,8 +155,12 @@ struct ExportSettings: Equatable, Sendable, Codable {
     var filenamePrefix: String = "framed_"
     var copyMetadata: Bool = true
     var secondsPerPhoto: Double = 2.0
+    var videoDurationMode: SlideshowVideoDurationMode = .original
     var audioBookmarkData: Data? = nil
     var audioDisplayName: String? = nil
+    var includeOriginalVideoAudio = true
+    var originalVideoAudioVolume: Double = 1.0
+    var backgroundAudioVolume: Double = 1.0
     var fadeInEnabled = true
     var fadeInDuration: Double = 0.5
     var fadeOutEnabled = true
@@ -162,8 +182,12 @@ struct ExportSettings: Equatable, Sendable, Codable {
 
 struct SlideshowSettings: Equatable, Sendable, Codable {
     var secondsPerPhoto: Double = 2.0
+    var videoDurationMode: SlideshowVideoDurationMode = .original
     var audioBookmarkData: Data? = nil
     var audioDisplayName: String? = nil
+    var includeOriginalVideoAudio = true
+    var originalVideoAudioVolume: Double = 1.0
+    var backgroundAudioVolume: Double = 1.0
     var fadeInEnabled = true
     var fadeInDuration: Double = 0.5
     var fadeOutEnabled = true

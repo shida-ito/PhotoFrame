@@ -72,8 +72,12 @@ struct ContentView: View {
     @AppStorage("exportFilenamePrefix") private var exportFilenamePrefix = "framed_"
     @AppStorage("exportCopyMetadata") private var exportCopyMetadata = true
     @AppStorage("exportSecondsPerPhoto") private var exportSecondsPerPhoto = 2.0
+    @AppStorage("exportVideoDurationMode") private var exportVideoDurationModeRaw = SlideshowVideoDurationMode.original.rawValue
     @AppStorage("exportAudioBookmarkData") private var exportAudioBookmarkData: Data = Data()
     @AppStorage("exportAudioDisplayName") private var exportAudioDisplayName = ""
+    @AppStorage("exportIncludeOriginalVideoAudio") private var exportIncludeOriginalVideoAudio = true
+    @AppStorage("exportOriginalVideoAudioVolume") private var exportOriginalVideoAudioVolume = 1.0
+    @AppStorage("exportBackgroundAudioVolume") private var exportBackgroundAudioVolume = 1.0
     @AppStorage("defaultAudioDirectoryPath") private var defaultAudioDirectoryPath = ""
     @AppStorage("exportFadeInEnabled") private var exportFadeInEnabled = true
     @AppStorage("exportFadeInDuration") private var exportFadeInDuration = 0.5
@@ -146,12 +150,12 @@ struct ContentView: View {
         return photoGroups[index]
     }
 
-    private var selectedGroupImageItems: [PhotoItem] {
-        selectedGroup?.photoItems.filter { $0.mediaKind == .image } ?? []
+    private var selectedGroupSlideshowItems: [PhotoItem] {
+        selectedGroup?.photoItems ?? []
     }
 
     private var canPreviewSlideshow: Bool {
-        !selectedGroupImageItems.isEmpty
+        !selectedGroupSlideshowItems.isEmpty
     }
 
     private var isSlideshowExportMode: Bool {
@@ -159,7 +163,7 @@ struct ContentView: View {
     }
 
     private var currentGroupExportCount: Int {
-        selectedGroupImageItems.count
+        selectedGroupSlideshowItems.count
     }
 
     private var currentPreviewItem: PhotoItem? {
@@ -200,6 +204,11 @@ struct ContentView: View {
         nonmutating set { exportSizePresetRaw = newValue.rawValue }
     }
 
+    private var exportVideoDurationMode: SlideshowVideoDurationMode {
+        get { SlideshowVideoDurationMode(rawValue: exportVideoDurationModeRaw) ?? .original }
+        nonmutating set { exportVideoDurationModeRaw = newValue.rawValue }
+    }
+
     private var currentExportSettings: ExportSettings {
         ExportSettings(
             format: exportFormat,
@@ -209,8 +218,12 @@ struct ContentView: View {
             filenamePrefix: exportFilenamePrefix,
             copyMetadata: exportCopyMetadata,
             secondsPerPhoto: max(exportSecondsPerPhoto, 0.1),
+            videoDurationMode: exportVideoDurationMode,
             audioBookmarkData: exportAudioBookmarkData.isEmpty ? nil : exportAudioBookmarkData,
             audioDisplayName: exportAudioDisplayName.isEmpty ? nil : exportAudioDisplayName,
+            includeOriginalVideoAudio: exportIncludeOriginalVideoAudio,
+            originalVideoAudioVolume: min(max(exportOriginalVideoAudioVolume, 0), 1),
+            backgroundAudioVolume: min(max(exportBackgroundAudioVolume, 0), 1),
             fadeInEnabled: exportFadeInEnabled,
             fadeInDuration: max(exportFadeInDuration, 0),
             fadeOutEnabled: exportFadeOutEnabled,
@@ -221,8 +234,12 @@ struct ContentView: View {
     private var currentGroupSlideshowSettings: SlideshowSettings {
         SlideshowSettings(
             secondsPerPhoto: max(exportSecondsPerPhoto, 0.1),
+            videoDurationMode: exportVideoDurationMode,
             audioBookmarkData: exportAudioBookmarkData.isEmpty ? nil : exportAudioBookmarkData,
             audioDisplayName: exportAudioDisplayName.isEmpty ? nil : exportAudioDisplayName,
+            includeOriginalVideoAudio: exportIncludeOriginalVideoAudio,
+            originalVideoAudioVolume: min(max(exportOriginalVideoAudioVolume, 0), 1),
+            backgroundAudioVolume: min(max(exportBackgroundAudioVolume, 0), 1),
             fadeInEnabled: exportFadeInEnabled,
             fadeInDuration: max(exportFadeInDuration, 0),
             fadeOutEnabled: exportFadeOutEnabled,
@@ -244,100 +261,290 @@ struct ContentView: View {
         )
     }
 
-    var body: some View {
+    private var exportVideoDurationModeBinding: Binding<SlideshowVideoDurationMode> {
+        Binding(
+            get: { exportVideoDurationMode },
+            set: { exportVideoDurationMode = $0 }
+        )
+    }
+
+    private var slideshowPreviewContainsVideo: Bool {
+        selectedGroup?.photoItems.contains(where: { $0.mediaKind.isVideo }) == true
+    }
+
+    @ViewBuilder
+    private var slideshowPreviewSettingsPanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if slideshowPreviewContainsVideo {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(L10n.slideshowVideoDurationMode(language))
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.65))
+                    Picker("", selection: Binding(
+                        get: { exportVideoDurationMode },
+                        set: {
+                            exportVideoDurationMode = $0
+                            schedulePreviewRegeneration(delayNanoseconds: 0)
+                        }
+                    )) {
+                        ForEach(SlideshowVideoDurationMode.allCases) { mode in
+                            Text(mode.title(language)).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    Text(L10n.slideshowVideoDurationHint(language))
+                        .font(.caption2)
+                        .foregroundColor(.white.opacity(0.35))
+                }
+            }
+
+            HStack(spacing: 10) {
+                Text(slideshowPreviewContainsVideo ? L10n.slideshowSecondsPerItem(language) : L10n.slideshowSecondsPerPhoto(language))
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.65))
+                TextField("", value: $exportSecondsPerPhoto, format: .number.precision(.fractionLength(1...2)))
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 72)
+                    .onChange(of: exportSecondsPerPhoto) {
+                        exportSecondsPerPhoto = max(exportSecondsPerPhoto, 0.1)
+                        schedulePreviewRegeneration(delayNanoseconds: 150_000_000)
+                    }
+                Spacer()
+                Button(L10n.chooseAudio(language), action: chooseExportAudio)
+                if !exportAudioDisplayName.isEmpty {
+                    Button(L10n.clearAudio(language), action: clearExportAudio)
+                }
+            }
+
+            HStack {
+                Text(exportAudioDisplayName.isEmpty ? L10n.noAudioSelected(language) : exportAudioDisplayName)
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.55))
+                    .lineLimit(1)
+                Spacer()
+            }
+
+            if !exportAudioDisplayName.isEmpty {
+                HStack(spacing: 10) {
+                    Text(L10n.backgroundAudioVolume(language))
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.65))
+                    Slider(value: $exportBackgroundAudioVolume, in: 0...1, step: 0.05)
+                        .onChange(of: exportBackgroundAudioVolume) {
+                            schedulePreviewRegeneration(delayNanoseconds: 0)
+                        }
+                    Text("\(Int((exportBackgroundAudioVolume * 100).rounded()))%")
+                        .font(.caption.monospacedDigit())
+                        .foregroundColor(.white.opacity(0.55))
+                        .frame(width: 42, alignment: .trailing)
+                }
+            }
+
+            if slideshowPreviewContainsVideo {
+                Toggle(L10n.useOriginalVideoAudio(language), isOn: $exportIncludeOriginalVideoAudio)
+                    .toggleStyle(.checkbox)
+                    .onChange(of: exportIncludeOriginalVideoAudio) {
+                        schedulePreviewRegeneration(delayNanoseconds: 0)
+                    }
+
+                if exportIncludeOriginalVideoAudio {
+                    HStack(spacing: 10) {
+                        Text(L10n.originalVideoAudioVolume(language))
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.65))
+                        Slider(value: $exportOriginalVideoAudioVolume, in: 0...1, step: 0.05)
+                            .onChange(of: exportOriginalVideoAudioVolume) {
+                                schedulePreviewRegeneration(delayNanoseconds: 0)
+                            }
+                        Text("\(Int((exportOriginalVideoAudioVolume * 100).rounded()))%")
+                            .font(.caption.monospacedDigit())
+                            .foregroundColor(.white.opacity(0.55))
+                            .frame(width: 42, alignment: .trailing)
+                    }
+                }
+            }
+
+            HStack(spacing: 12) {
+                Toggle(L10n.fadeIn(language), isOn: $exportFadeInEnabled)
+                    .toggleStyle(.checkbox)
+                    .onChange(of: exportFadeInEnabled) {
+                        schedulePreviewRegeneration(delayNanoseconds: 0)
+                    }
+                if exportFadeInEnabled {
+                    TextField("", value: $exportFadeInDuration, format: .number.precision(.fractionLength(1...2)))
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 72)
+                        .onChange(of: exportFadeInDuration) {
+                            exportFadeInDuration = max(exportFadeInDuration, 0)
+                            schedulePreviewRegeneration(delayNanoseconds: 150_000_000)
+                        }
+                }
+                Spacer()
+            }
+
+            HStack(spacing: 12) {
+                Toggle(L10n.fadeOut(language), isOn: $exportFadeOutEnabled)
+                    .toggleStyle(.checkbox)
+                    .onChange(of: exportFadeOutEnabled) {
+                        schedulePreviewRegeneration(delayNanoseconds: 0)
+                    }
+                if exportFadeOutEnabled {
+                    TextField("", value: $exportFadeOutDuration, format: .number.precision(.fractionLength(1...2)))
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 72)
+                        .onChange(of: exportFadeOutDuration) {
+                            exportFadeOutDuration = max(exportFadeOutDuration, 0)
+                            schedulePreviewRegeneration(delayNanoseconds: 150_000_000)
+                        }
+                }
+                Spacer()
+            }
+
+            Text(L10n.slideshowPreviewAudioUsesExport(language))
+                .font(.caption2)
+                .foregroundColor(.white.opacity(0.35))
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(theme.panelFill.opacity(0.45))
+    }
+
+    private func exportSheetItems(for scope: ExportScope) -> [PhotoItem] {
+        if isSlideshowExportMode {
+            return slideshowGroups(for: scope).flatMap(\.items)
+        }
+
+        return exportItems(for: scope).map(\.item)
+    }
+
+    @ViewBuilder
+    private func exportSettingsSheet(for scope: ExportScope) -> some View {
+        let scopedItems = exportSheetItems(for: scope)
+
+        ExportSettingsSheet(
+            scope: scope,
+            itemCount: exportItemCount(for: scope),
+            language: language,
+            format: exportFormatBinding,
+            jpegQuality: $exportJPEGQuality,
+            sizePreset: exportSizePresetBinding,
+            customLongEdge: $exportCustomLongEdge,
+            filenamePrefix: $exportFilenamePrefix,
+            copyMetadata: $exportCopyMetadata,
+            secondsPerPhoto: $exportSecondsPerPhoto,
+            videoDurationMode: exportVideoDurationModeBinding,
+            audioDisplayName: exportAudioDisplayName.isEmpty ? nil : exportAudioDisplayName,
+            includeOriginalVideoAudio: $exportIncludeOriginalVideoAudio,
+            originalVideoAudioVolume: $exportOriginalVideoAudioVolume,
+            backgroundAudioVolume: $exportBackgroundAudioVolume,
+            fadeInEnabled: $exportFadeInEnabled,
+            fadeInDuration: $exportFadeInDuration,
+            fadeOutEnabled: $exportFadeOutEnabled,
+            fadeOutDuration: $exportFadeOutDuration,
+            isSlideshowWorkflow: isSlideshowExportMode,
+            containsImageItems: scopedItems.contains(where: { !$0.mediaKind.isVideo }),
+            containsVideoItems: scopedItems.contains(where: { $0.mediaKind.isVideo }),
+            onChooseAudio: chooseExportAudio,
+            onClearAudio: clearExportAudio,
+            onConfirm: { confirmExport(scope) }
+        )
+    }
+
+    private var rootView: some View {
         ZStack {
             backgroundGradient
             mainHStack
         }
         .tint(theme.accent)
-        .onAppear {
-            restoreWorkspaceIfNeeded()
-            if selectedGroupID == nil {
-                selectedGroupID = photoGroups.first?.id
+    }
+
+    private var lifecycleConfiguredView: some View {
+        rootView
+            .onAppear {
+                restoreWorkspaceIfNeeded()
+                if selectedGroupID == nil {
+                    selectedGroupID = photoGroups.first?.id
+                }
+                loadSelectedGroupSettings()
             }
-            loadSelectedGroupSettings()
-        }
-        .onChange(of: selectedGroupID) {
-            loadSelectedGroupSettings()
-            loadSelectedGroupSlideshowSettings()
-        }
-        .onChange(of: settings.state) {
-            persistSettingsToSelectedGroup()
-        }
-        .onChange(of: exportSecondsPerPhoto) {
-            persistSlideshowSettingsToSelectedGroup()
-        }
-        .onChange(of: exportAudioBookmarkData) {
-            persistSlideshowSettingsToSelectedGroup()
-        }
-        .onChange(of: exportAudioDisplayName) {
-            persistSlideshowSettingsToSelectedGroup()
-        }
-        .onChange(of: exportFadeInEnabled) {
-            persistSlideshowSettingsToSelectedGroup()
-        }
-        .onChange(of: exportFadeInDuration) {
-            persistSlideshowSettingsToSelectedGroup()
-        }
-        .onChange(of: exportFadeOutEnabled) {
-            persistSlideshowSettingsToSelectedGroup()
-        }
-        .onChange(of: exportFadeOutDuration) {
-            persistSlideshowSettingsToSelectedGroup()
-        }
-        .onChange(of: settings.editorConfiguration.backgroundPreviewSignature) {
-            schedulePreviewRegeneration()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .photoFrameExportAllGroupSettings)) { _ in
-            exportAllGroupSettings()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .photoFrameImportAllGroupSettings)) { _ in
-            importAllGroupSettings()
-        }
-        .sheet(item: $activeExportScope) { scope in
-            let scopedItems = exportItems(for: scope)
-            ExportSettingsSheet(
-                scope: scope,
-                itemCount: exportItemCount(for: scope),
-                language: language,
-                format: exportFormatBinding,
-                jpegQuality: $exportJPEGQuality,
-                sizePreset: exportSizePresetBinding,
-                customLongEdge: $exportCustomLongEdge,
-                filenamePrefix: $exportFilenamePrefix,
-                copyMetadata: $exportCopyMetadata,
-                secondsPerPhoto: $exportSecondsPerPhoto,
-                audioDisplayName: exportAudioDisplayName.isEmpty ? nil : exportAudioDisplayName,
-                fadeInEnabled: $exportFadeInEnabled,
-                fadeInDuration: $exportFadeInDuration,
-                fadeOutEnabled: $exportFadeOutEnabled,
-                fadeOutDuration: $exportFadeOutDuration,
-                isSlideshowWorkflow: isSlideshowExportMode,
-                containsImageItems: scopedItems.contains(where: { !$0.item.mediaKind.isVideo }),
-                containsVideoItems: scopedItems.contains(where: { $0.item.mediaKind.isVideo }),
-                onChooseAudio: chooseExportAudio,
-                onClearAudio: clearExportAudio,
-                onConfirm: { confirmExport(scope) }
-            )
-        }
-        .alert(L10n.workspaceRecoveryTitle(language), isPresented: $showingWorkspaceRecoveryAlert) {
-            Button(L10n.ok(language)) { }
-        } message: {
-            Text(workspaceRecoveryMessage)
-        }
-        .alert(groupSettingsTransferAlertTitle, isPresented: $showingGroupSettingsTransferAlert) {
-            Button(L10n.ok(language)) { }
-        } message: {
-            Text(groupSettingsTransferAlertMessage)
-        }
-        .alert(L10n.resetWorkspaceTitle(language), isPresented: $showingResetWorkspaceAlert) {
-            Button(L10n.resetWorkspace(language), role: .destructive) {
-                resetWorkspaceAndResumeAutoSave()
+            .onChange(of: selectedGroupID) {
+                loadSelectedGroupSettings()
+                loadSelectedGroupSlideshowSettings()
             }
-            Button(L10n.cancel(language), role: .cancel) { }
-        } message: {
-            Text(L10n.resetWorkspaceMessage(language))
-        }
+            .onChange(of: settings.state) {
+                persistSettingsToSelectedGroup()
+            }
+            .onChange(of: exportSecondsPerPhoto) {
+                persistSlideshowSettingsToSelectedGroup()
+            }
+            .onChange(of: exportVideoDurationModeRaw) {
+                persistSlideshowSettingsToSelectedGroup()
+            }
+            .onChange(of: exportAudioBookmarkData) {
+                persistSlideshowSettingsToSelectedGroup()
+            }
+            .onChange(of: exportAudioDisplayName) {
+                persistSlideshowSettingsToSelectedGroup()
+            }
+            .onChange(of: exportIncludeOriginalVideoAudio) {
+                persistSlideshowSettingsToSelectedGroup()
+            }
+            .onChange(of: exportOriginalVideoAudioVolume) {
+                persistSlideshowSettingsToSelectedGroup()
+            }
+            .onChange(of: exportBackgroundAudioVolume) {
+                persistSlideshowSettingsToSelectedGroup()
+            }
+            .onChange(of: exportFadeInEnabled) {
+                persistSlideshowSettingsToSelectedGroup()
+            }
+            .onChange(of: exportFadeInDuration) {
+                persistSlideshowSettingsToSelectedGroup()
+            }
+            .onChange(of: exportFadeOutEnabled) {
+                persistSlideshowSettingsToSelectedGroup()
+            }
+            .onChange(of: exportFadeOutDuration) {
+                persistSlideshowSettingsToSelectedGroup()
+            }
+            .onChange(of: settings.editorConfiguration.backgroundPreviewSignature) {
+                schedulePreviewRegeneration()
+            }
+    }
+
+    private var presentationConfiguredView: some View {
+        lifecycleConfiguredView
+            .onReceive(NotificationCenter.default.publisher(for: .photoFrameExportAllGroupSettings)) { _ in
+                exportAllGroupSettings()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .photoFrameImportAllGroupSettings)) { _ in
+                importAllGroupSettings()
+            }
+            .sheet(item: $activeExportScope) { scope in
+                exportSettingsSheet(for: scope)
+            }
+            .alert(L10n.workspaceRecoveryTitle(language), isPresented: $showingWorkspaceRecoveryAlert) {
+                Button(L10n.ok(language)) { }
+            } message: {
+                Text(workspaceRecoveryMessage)
+            }
+            .alert(groupSettingsTransferAlertTitle, isPresented: $showingGroupSettingsTransferAlert) {
+                Button(L10n.ok(language)) { }
+            } message: {
+                Text(groupSettingsTransferAlertMessage)
+            }
+            .alert(L10n.resetWorkspaceTitle(language), isPresented: $showingResetWorkspaceAlert) {
+                Button(L10n.resetWorkspace(language), role: .destructive) {
+                    resetWorkspaceAndResumeAutoSave()
+                }
+                Button(L10n.cancel(language), role: .cancel) { }
+            } message: {
+                Text(L10n.resetWorkspaceMessage(language))
+            }
+    }
+
+    var body: some View {
+        presentationConfiguredView
     }
 
     private var backgroundGradient: some View {
@@ -751,85 +958,19 @@ struct ContentView: View {
             }.padding(.horizontal, 16).padding(.vertical, 10)
             Divider().background(theme.divider)
             if previewMode == .slideshow {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(spacing: 10) {
-                        Text(L10n.slideshowSecondsPerPhoto(language))
-                            .font(.caption)
-                            .foregroundColor(.white.opacity(0.65))
-                        TextField("", value: $exportSecondsPerPhoto, format: .number.precision(.fractionLength(1...2)))
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 72)
-                            .onChange(of: exportSecondsPerPhoto) {
-                                exportSecondsPerPhoto = max(exportSecondsPerPhoto, 0.1)
-                                schedulePreviewRegeneration(delayNanoseconds: 150_000_000)
-                            }
-                        Spacer()
-                        Button(L10n.chooseAudio(language), action: chooseExportAudio)
-                        if !exportAudioDisplayName.isEmpty {
-                            Button(L10n.clearAudio(language), action: clearExportAudio)
-                        }
-                    }
-
-                    HStack {
-                        Text(exportAudioDisplayName.isEmpty ? L10n.noAudioSelected(language) : exportAudioDisplayName)
-                            .font(.caption)
-                            .foregroundColor(.white.opacity(0.55))
-                            .lineLimit(1)
-                        Spacer()
-                    }
-
-                    HStack(spacing: 12) {
-                        Toggle(L10n.fadeIn(language), isOn: $exportFadeInEnabled)
-                            .toggleStyle(.checkbox)
-                            .onChange(of: exportFadeInEnabled) {
-                                schedulePreviewRegeneration(delayNanoseconds: 0)
-                            }
-                        if exportFadeInEnabled {
-                            TextField("", value: $exportFadeInDuration, format: .number.precision(.fractionLength(1...2)))
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 72)
-                                .onChange(of: exportFadeInDuration) {
-                                    exportFadeInDuration = max(exportFadeInDuration, 0)
-                                    schedulePreviewRegeneration(delayNanoseconds: 150_000_000)
-                                }
-                        }
-                        Spacer()
-                    }
-
-                    HStack(spacing: 12) {
-                        Toggle(L10n.fadeOut(language), isOn: $exportFadeOutEnabled)
-                            .toggleStyle(.checkbox)
-                            .onChange(of: exportFadeOutEnabled) {
-                                schedulePreviewRegeneration(delayNanoseconds: 0)
-                            }
-                        if exportFadeOutEnabled {
-                            TextField("", value: $exportFadeOutDuration, format: .number.precision(.fractionLength(1...2)))
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 72)
-                                .onChange(of: exportFadeOutDuration) {
-                                    exportFadeOutDuration = max(exportFadeOutDuration, 0)
-                                    schedulePreviewRegeneration(delayNanoseconds: 150_000_000)
-                                }
-                        }
-                        Spacer()
-                    }
-
-                    Text(L10n.slideshowPreviewAudioUsesExport(language))
-                        .font(.caption2)
-                        .foregroundColor(.white.opacity(0.35))
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .background(theme.panelFill.opacity(0.45))
+                slideshowPreviewSettingsPanel
                 Divider().background(theme.divider)
             }
             ZStack {
                 theme.previewSurface
                 if previewMode == .slideshow {
                     if let previewSlideshowURL {
-                        LoopingVideoPlayerView(
+                        SlideshowVideoPreviewCanvas(
                             url: previewSlideshowURL,
-                            isMuted: fullscreenSlideshowWindowController != nil || exportAudioDisplayName.isEmpty
+                            isMuted: fullscreenSlideshowWindowController != nil || (
+                                exportAudioDisplayName.isEmpty &&
+                                !(exportIncludeOriginalVideoAudio && (selectedGroup?.photoItems.contains(where: { $0.mediaKind.isVideo }) == true))
+                            )
                         )
                         .padding(20)
                     } else if !canPreviewSlideshow {
@@ -1250,8 +1391,12 @@ struct ContentView: View {
         let targetSettings = photoGroups[index].slideshowSettings
         isApplyingGroupSlideshowSettings = true
         exportSecondsPerPhoto = max(targetSettings.secondsPerPhoto, 0.1)
+        exportVideoDurationMode = targetSettings.videoDurationMode
         exportAudioBookmarkData = targetSettings.audioBookmarkData ?? Data()
         exportAudioDisplayName = targetSettings.audioDisplayName ?? ""
+        exportIncludeOriginalVideoAudio = targetSettings.includeOriginalVideoAudio
+        exportOriginalVideoAudioVolume = min(max(targetSettings.originalVideoAudioVolume, 0), 1)
+        exportBackgroundAudioVolume = min(max(targetSettings.backgroundAudioVolume, 0), 1)
         exportFadeInEnabled = targetSettings.fadeInEnabled
         exportFadeInDuration = max(targetSettings.fadeInDuration, 0)
         exportFadeOutEnabled = targetSettings.fadeOutEnabled
@@ -2008,7 +2153,7 @@ struct ContentView: View {
         }
 
         isGeneratingPreview = true
-        let items = selectedGroup.photoItems.filter { $0.mediaKind == .image }
+        let items = selectedGroup.photoItems
         let exportSettings = currentExportSettings
         let options = buildOptions(for: selectedGroup.settingsState.configuration).0
         let outputURL = temporaryPreviewSlideshowURL()
@@ -2101,7 +2246,7 @@ struct ContentView: View {
             case .selected:
                 guard currentGroupExportCount > 0 else { return }
             case .all:
-                guard photoGroups.contains(where: { $0.photoItems.contains(where: { $0.mediaKind == .image }) }) else { return }
+                guard photoGroups.contains(where: { !$0.photoItems.isEmpty }) else { return }
             }
         } else {
             switch scope {
@@ -2122,7 +2267,7 @@ struct ContentView: View {
                 return currentGroupExportCount
             case .all:
                 return photoGroups.reduce(0) { partialResult, group in
-                    partialResult + group.photoItems.filter { $0.mediaKind == .image }.count
+                    partialResult + group.photoItems.count
                 }
             }
         }
@@ -2276,31 +2421,29 @@ struct ContentView: View {
             switch scope {
             case .selected:
                 guard let selectedGroup else { return [] }
-                let images = selectedGroup.photoItems.filter { $0.mediaKind == .image }
-                guard !images.isEmpty else { return [] }
-                return [SlideshowExportGroup(group: selectedGroup, items: images)]
+                guard !selectedGroup.photoItems.isEmpty else { return [] }
+                return [SlideshowExportGroup(group: selectedGroup, items: selectedGroup.photoItems)]
             case .all:
                 return photoGroups.compactMap { group in
-                    let images = group.photoItems.filter { $0.mediaKind == .image }
-                    guard !images.isEmpty else { return nil }
-                    return SlideshowExportGroup(group: group, items: images)
+                    guard !group.photoItems.isEmpty else { return nil }
+                    return SlideshowExportGroup(group: group, items: group.photoItems)
                 }
             }
         }
 
         return photoGroups.compactMap { group -> SlideshowExportGroup? in
-            let images: [PhotoItem]
+            let items: [PhotoItem]
             switch scope {
             case .selected:
-                images = group.photoItems.filter {
-                    $0.mediaKind == .image && selectedItems.contains($0.id)
+                items = group.photoItems.filter {
+                    selectedItems.contains($0.id)
                 }
             case .all:
-                images = group.photoItems.filter { $0.mediaKind == .image }
+                items = group.photoItems
             }
 
-            guard !images.isEmpty else { return nil }
-            return SlideshowExportGroup(group: group, items: images)
+            guard !items.isEmpty else { return nil }
+            return SlideshowExportGroup(group: group, items: items)
         }
     }
 
@@ -2608,7 +2751,7 @@ struct ContentView: View {
 
         for offset in 1...photoGroups.count {
             let candidateIndex = (currentIndex + offset) % photoGroups.count
-            if photoGroups[candidateIndex].photoItems.contains(where: { $0.mediaKind == .image }) {
+            if !photoGroups[candidateIndex].photoItems.isEmpty {
                 return candidateIndex
             }
         }

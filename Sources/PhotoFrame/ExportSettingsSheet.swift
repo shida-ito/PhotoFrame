@@ -11,7 +11,11 @@ struct ExportSettingsSheet: View {
     @Binding var filenamePrefix: String
     @Binding var copyMetadata: Bool
     @Binding var secondsPerPhoto: Double
+    @Binding var videoDurationMode: SlideshowVideoDurationMode
     let audioDisplayName: String?
+    @Binding var includeOriginalVideoAudio: Bool
+    @Binding var originalVideoAudioVolume: Double
+    @Binding var backgroundAudioVolume: Double
     @Binding var fadeInEnabled: Bool
     @Binding var fadeInDuration: Double
     @Binding var fadeOutEnabled: Bool
@@ -101,8 +105,25 @@ struct ExportSettingsSheet: View {
                 }
 
                 if format == .slideshowVideo {
+                    if containsVideoItems {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(L10n.slideshowVideoDurationMode(language))
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Picker("", selection: $videoDurationMode) {
+                                ForEach(SlideshowVideoDurationMode.allCases) { mode in
+                                    Text(mode.title(language)).tag(mode)
+                                }
+                            }
+                            .labelsHidden()
+                            Text(L10n.slideshowVideoDurationHint(language))
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(L10n.slideshowSecondsPerPhoto(language))
+                        Text(containsVideoItems ? L10n.slideshowSecondsPerItem(language) : L10n.slideshowSecondsPerPhoto(language))
                             .font(.caption)
                             .foregroundColor(.secondary)
                         TextField(
@@ -126,6 +147,40 @@ struct ExportSettingsSheet: View {
                             Button(L10n.chooseAudio(language), action: onChooseAudio)
                             if audioDisplayName != nil {
                                 Button(L10n.clearAudio(language), action: onClearAudio)
+                            }
+                        }
+                    }
+
+                    if audioDisplayName != nil {
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Text(L10n.backgroundAudioVolume(language))
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Text("\(Int((backgroundAudioVolume * 100).rounded()))%")
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundColor(.secondary)
+                            }
+                            Slider(value: $backgroundAudioVolume, in: 0...1, step: 0.05)
+                        }
+                    }
+
+                    if containsVideoItems {
+                        Toggle(L10n.useOriginalVideoAudio(language), isOn: $includeOriginalVideoAudio)
+
+                        if includeOriginalVideoAudio {
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack {
+                                    Text(L10n.originalVideoAudioVolume(language))
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    Spacer()
+                                    Text("\(Int((originalVideoAudioVolume * 100).rounded()))%")
+                                        .font(.caption.monospacedDigit())
+                                        .foregroundColor(.secondary)
+                                }
+                                Slider(value: $originalVideoAudioVolume, in: 0...1, step: 0.05)
                             }
                         }
                     }

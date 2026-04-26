@@ -51,7 +51,13 @@ enum L10n {
     static func exportFormat(_ language: AppLanguage) -> String { language == .japanese ? "形式" : "Format" }
     static func exportSize(_ language: AppLanguage) -> String { language == .japanese ? "画像サイズ" : "Image Size" }
     static func slideshowSecondsPerPhoto(_ language: AppLanguage) -> String { language == .japanese ? "1枚あたりの秒数" : "Seconds Per Photo" }
+    static func slideshowSecondsPerItem(_ language: AppLanguage) -> String { language == .japanese ? "1項目あたりの秒数" : "Seconds Per Item" }
+    static func slideshowVideoDurationMode(_ language: AppLanguage) -> String { language == .japanese ? "動画の長さ" : "Video Duration" }
+    static func slideshowVideoDurationHint(_ language: AppLanguage) -> String { language == .japanese ? "写真は常に指定秒数、動画はここで元の長さか指定秒数を選べます。" : "Photos always use the specified duration. Videos can use their original duration or the specified duration." }
     static func slideshowAudio(_ language: AppLanguage) -> String { language == .japanese ? "サウンド" : "Sound" }
+    static func useOriginalVideoAudio(_ language: AppLanguage) -> String { language == .japanese ? "元動画の音声を使う" : "Use Original Video Audio" }
+    static func originalVideoAudioVolume(_ language: AppLanguage) -> String { language == .japanese ? "元動画音声の大きさ" : "Original Video Audio Volume" }
+    static func backgroundAudioVolume(_ language: AppLanguage) -> String { language == .japanese ? "追加音声の大きさ" : "Added Audio Volume" }
     static func chooseAudio(_ language: AppLanguage) -> String { language == .japanese ? "音声を選択..." : "Choose Audio..." }
     static func clearAudio(_ language: AppLanguage) -> String { language == .japanese ? "音声を外す" : "Remove Audio" }
     static func noAudioSelected(_ language: AppLanguage) -> String { language == .japanese ? "音声未選択" : "No audio selected" }
@@ -65,13 +71,13 @@ enum L10n {
     static func exportDestination(_ language: AppLanguage) -> String { language == .japanese ? "書き出し先フォルダを選択します。" : "Choose an output folder after confirming these settings." }
     static func exportAction(_ language: AppLanguage) -> String { language == .japanese ? "書き出し" : "Export" }
     static func videoExportNote(_ language: AppLanguage) -> String { language == .japanese ? "動画は MOV で書き出します。サイズ設定は動画にも適用され、音声があれば保持します。" : "Videos export as MOV. Size settings also apply to video, and audio is preserved when present." }
-    static func slideshowExportNote(_ language: AppLanguage) -> String { language == .japanese ? "MOV で書き出します。選択書き出しは選択中の写真をグループごとに1本へ、すべて書き出しは各グループを1本の動画にまとめます。" : "Exports as MOV. Selected export creates one video per group from the selected photos, and Export All creates one video per group." }
+    static func slideshowExportNote(_ language: AppLanguage) -> String { language == .japanese ? "MOV で書き出します。選択書き出しは選択中の項目をグループごとに1本へ、すべて書き出しは各グループを1本の動画にまとめます。" : "Exports as MOV. Selected export creates one video per group from the selected items, and Export All creates one video per group." }
     static func preview(_ language: AppLanguage) -> String { language == .japanese ? "プレビュー" : "Preview" }
     static func selectPhotoToPreview(_ language: AppLanguage) -> String { language == .japanese ? "写真または動画を選択するとプレビューを表示します" : "Select a photo or video to preview" }
     static func previewModePhoto(_ language: AppLanguage) -> String { language == .japanese ? "写真" : "Photo" }
     static func previewModeSlideshow(_ language: AppLanguage) -> String { language == .japanese ? "スライドショー" : "Slideshow" }
-    static func slideshowPreviewNeedsPhotos(_ language: AppLanguage) -> String { language == .japanese ? "スライドショープレビューには同じグループに1枚以上の写真が必要です" : "Slideshow preview needs at least one photo in the group" }
-    static func slideshowPreviewAudioUsesExport(_ language: AppLanguage) -> String { language == .japanese ? "ここで選んだ音声と秒数は動画書き出しにも使います。" : "The audio and timing selected here are also used for video export." }
+    static func slideshowPreviewNeedsPhotos(_ language: AppLanguage) -> String { language == .japanese ? "スライドショープレビューには同じグループに1件以上の項目が必要です" : "Slideshow preview needs at least one item in the group" }
+    static func slideshowPreviewAudioUsesExport(_ language: AppLanguage) -> String { language == .japanese ? "ここで選んだ長さと音声設定は動画書き出しにも使います。" : "The timing and audio settings selected here are also used for video export." }
     static func preparingSlideshowPreview(_ language: AppLanguage) -> String { language == .japanese ? "スライドショーを準備中…" : "Preparing slideshow preview…" }
     static func fullscreenPreview(_ language: AppLanguage) -> String { language == .japanese ? "全画面プレビュー" : "Fullscreen Preview" }
     static func closeFullscreenPreview(_ language: AppLanguage) -> String { language == .japanese ? "全画面を閉じる" : "Close Fullscreen" }
