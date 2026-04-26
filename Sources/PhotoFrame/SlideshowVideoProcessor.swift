@@ -762,24 +762,23 @@ struct SlideshowVideoProcessor {
         videoComposition.frameDuration = CMTime(value: 1, timescale: Int32(frameRate))
         videoComposition.instructions = instructions
 
-        guard let exportSession = AVAssetExportSession(
-            asset: composition,
-            presetName: AVAssetExportPresetHighestQuality
-        ) else {
-            throw SlideshowVideoProcessingError.cannotCreateExportSession
-        }
-
-        exportSession.shouldOptimizeForNetworkUse = false
-        exportSession.videoComposition = videoComposition
-
-        if !audioParameters.isEmpty {
-            let audioMix = AVMutableAudioMix()
-            audioMix.inputParameters = audioParameters
-            exportSession.audioMix = audioMix
-        }
-
         try? FileManager.default.removeItem(at: outputURL)
-        try await exportSession.export(to: outputURL, as: .mov)
+        let audioMix: AVAudioMix?
+        if !audioParameters.isEmpty {
+            let mutableAudioMix = AVMutableAudioMix()
+            mutableAudioMix.inputParameters = audioParameters
+            audioMix = mutableAudioMix
+        } else {
+            audioMix = nil
+        }
+
+        try await exportCompositionExactly(
+            asset: composition,
+            outputURL: outputURL,
+            renderSize: renderSize,
+            videoComposition: videoComposition,
+            audioMix: audioMix
+        )
     }
 
     private static func normalizedTrackTransform(
@@ -832,6 +831,229 @@ struct SlideshowVideoProcessor {
                 y: targetRect.midY - scaledRect.midY
             )
         )
+    }
+
+    private static func exportCompositionExactly(
+        asset: AVAsset,
+        outputURL: URL,
+        renderSize: CGSize,
+        videoComposition: AVVideoComposition,
+        audioMix: AVAudioMix?
+    ) async throws {
+        let reader = try AVAssetReader(asset: asset)
+        guard let writer = try? AVAssetWriter(outputURL: outputURL, fileType: .mov) else {
+            throw SlideshowVideoProcessingError.cannotCreateWriter
+        }
+
+        let videoTracks = try await asset.loadTracks(withMediaType: .video)
+        guard !videoTracks.isEmpty else {
+            throw SlideshowVideoProcessingError.cannotLoadVideoTrack
+        }
+
+        let videoOutput = AVAssetReaderVideoCompositionOutput(
+            videoTracks: videoTracks,
+            videoSettings: [
+                kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32BGRA)
+            ]
+        )
+        videoOutput.videoComposition = videoComposition
+        videoOutput.alwaysCopiesSampleData = false
+        guard reader.canAdd(videoOutput) else {
+            throw SlideshowVideoProcessingError.cannotCreateComposition
+        }
+        reader.add(videoOutput)
+
+        let videoInput = AVAssetWriterInput(
+            mediaType: .video,
+            outputSettings: [
+                AVVideoCodecKey: AVVideoCodecType.h264,
+                AVVideoWidthKey: max(Int(renderSize.width.rounded()), 1),
+                AVVideoHeightKey: max(Int(renderSize.height.rounded()), 1)
+            ]
+        )
+        videoInput.expectsMediaDataInRealTime = false
+        guard writer.canAdd(videoInput) else {
+            throw SlideshowVideoProcessingError.cannotCreateWriter
+        }
+        writer.add(videoInput)
+
+        let audioTracks = try await asset.loadTracks(withMediaType: .audio)
+        var audioOutput: AVAssetReaderAudioMixOutput?
+        var audioInput: AVAssetWriterInput?
+
+        if !audioTracks.isEmpty {
+            let candidateOutput = AVAssetReaderAudioMixOutput(
+                audioTracks: audioTracks,
+                audioSettings: [
+                    AVFormatIDKey: kAudioFormatLinearPCM
+                ]
+            )
+            candidateOutput.audioMix = audioMix
+            candidateOutput.alwaysCopiesSampleData = false
+
+            let candidateInput = AVAssetWriterInput(
+                mediaType: .audio,
+                outputSettings: [
+                    AVFormatIDKey: kAudioFormatMPEG4AAC,
+                    AVNumberOfChannelsKey: 2,
+                    AVSampleRateKey: 44_100,
+                    AVEncoderBitRateKey: 192_000
+                ]
+            )
+            candidateInput.expectsMediaDataInRealTime = false
+
+            guard reader.canAdd(candidateOutput), writer.canAdd(candidateInput) else {
+                throw SlideshowVideoProcessingError.cannotCreateComposition
+            }
+
+            reader.add(candidateOutput)
+            writer.add(candidateInput)
+            audioOutput = candidateOutput
+            audioInput = candidateInput
+        }
+
+        guard writer.startWriting() else {
+            throw writer.error ?? SlideshowVideoProcessingError.cannotCreateWriter
+        }
+        guard reader.startReading() else {
+            throw reader.error ?? SlideshowVideoProcessingError.cannotCreateComposition
+        }
+
+        writer.startSession(atSourceTime: .zero)
+
+        let streamCount = audioOutput == nil || audioInput == nil ? 1 : 2
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            let coordinator = SampleAppendCoordinator(
+                remainingStreams: streamCount,
+                reader: reader,
+                writer: writer,
+                continuation: continuation
+            )
+
+            appendSamples(
+                from: videoOutput,
+                to: videoInput,
+                reader: reader,
+                writer: writer
+            ) { result in
+                coordinator.complete(result)
+            }
+
+            if let audioOutput, let audioInput {
+                appendSamples(
+                    from: audioOutput,
+                    to: audioInput,
+                    reader: reader,
+                    writer: writer
+                ) { result in
+                    coordinator.complete(result)
+                }
+            }
+        }
+
+        try await finishWriting(writer)
+
+        guard reader.status != .failed else {
+            throw reader.error ?? SlideshowVideoProcessingError.cannotWriteVideo
+        }
+        guard writer.status == .completed else {
+            throw writer.error ?? SlideshowVideoProcessingError.cannotWriteVideo
+        }
+    }
+
+    private final class SampleAppendCoordinator: @unchecked Sendable {
+        private let lock = NSLock()
+        private var remainingStreams: Int
+        private var finished = false
+        private let reader: AVAssetReader
+        private let writer: AVAssetWriter
+        private let continuation: CheckedContinuation<Void, Error>
+
+        init(
+            remainingStreams: Int,
+            reader: AVAssetReader,
+            writer: AVAssetWriter,
+            continuation: CheckedContinuation<Void, Error>
+        ) {
+            self.remainingStreams = remainingStreams
+            self.reader = reader
+            self.writer = writer
+            self.continuation = continuation
+        }
+
+        func complete(_ result: Result<Void, Error>) {
+            lock.lock()
+            defer { lock.unlock() }
+
+            guard !finished else { return }
+
+            switch result {
+            case .failure(let error):
+                finished = true
+                reader.cancelReading()
+                writer.cancelWriting()
+                continuation.resume(throwing: error)
+            case .success:
+                remainingStreams -= 1
+                if remainingStreams == 0 {
+                    finished = true
+                    continuation.resume()
+                }
+            }
+        }
+    }
+
+    private static func appendSamples(
+        from output: AVAssetReaderOutput,
+        to input: AVAssetWriterInput,
+        reader: AVAssetReader,
+        writer: AVAssetWriter,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        let queue = DispatchQueue(label: "PhotoFrame.sample-append.\(UUID().uuidString)")
+        let completionGuard = CompletionGuard(completion: completion)
+
+        input.requestMediaDataWhenReady(on: queue) {
+            while input.isReadyForMoreMediaData {
+                if let sampleBuffer = output.copyNextSampleBuffer() {
+                    if !input.append(sampleBuffer) {
+                        input.markAsFinished()
+                        completionGuard.finish(.failure(writer.error ?? SlideshowVideoProcessingError.cannotWriteVideo))
+                        return
+                    }
+                    continue
+                }
+
+                input.markAsFinished()
+
+                if reader.status == .failed {
+                    completionGuard.finish(.failure(reader.error ?? SlideshowVideoProcessingError.cannotWriteVideo))
+                } else if writer.status == .failed {
+                    completionGuard.finish(.failure(writer.error ?? SlideshowVideoProcessingError.cannotWriteVideo))
+                } else {
+                    completionGuard.finish(.success(()))
+                }
+                return
+            }
+        }
+    }
+
+    private final class CompletionGuard: @unchecked Sendable {
+        private let lock = NSLock()
+        private var didFinish = false
+        private let completion: (Result<Void, Error>) -> Void
+
+        init(completion: @escaping (Result<Void, Error>) -> Void) {
+            self.completion = completion
+        }
+
+        func finish(_ result: Result<Void, Error>) {
+            lock.lock()
+            defer { lock.unlock() }
+            guard !didFinish else { return }
+            didFinish = true
+            completion(result)
+        }
     }
 
     private static func renderFrame(
