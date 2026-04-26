@@ -5,8 +5,6 @@ import UniformTypeIdentifiers
 // MARK: - Content View
 
 struct ContentView: View {
-    private static var hasRestoredWorkspaceInProcess = false
-
     private enum FocusPane: Hashable {
         case photoList
     }
@@ -50,6 +48,7 @@ struct ContentView: View {
     @State private var previewVideoComposition: AVVideoComposition?
     @State private var previewVideoCompositionSignature = ""
     @State private var previewSlideshowURL: URL?
+    @State private var slideshowPreviewIsPlaying = true
     @State private var isGeneratingPreview = false
     @State private var previewScheduleTask: Task<Void, Never>? = nil
     @State private var previewTask: Task<Void, Never>? = nil
@@ -57,6 +56,7 @@ struct ContentView: View {
     @State private var isApplyingGroupSettings = false
     @State private var isApplyingGroupSlideshowSettings = false
     @State private var isRestoringWorkspace = false
+    @State private var hasRestoredWorkspace = false
     @State private var lastClearedSnapshot: ClearUndoSnapshot? = nil
     @FocusState private var focusedPane: FocusPane?
     
@@ -64,6 +64,7 @@ struct ContentView: View {
     @AppStorage("workspaceData") private var workspaceData: Data = Data()
     @AppStorage("workspaceBackupData") private var workspaceBackupData: Data = Data()
     @AppStorage("previewMaxDim") private var previewMaxDim: Double = 600
+    @AppStorage("itemRowScale") private var itemRowScale = 1.0
     @AppStorage("exportFormat") private var exportFormatRaw = ExportFormat.jpeg.rawValue
     @AppStorage("lastStillExportFormat") private var lastStillExportFormatRaw = ExportFormat.jpeg.rawValue
     @AppStorage("exportJPEGQuality") private var exportJPEGQuality = 0.95
@@ -304,9 +305,6 @@ struct ContentView: View {
                                 schedulePreviewRegeneration(delayNanoseconds: 150_000_000)
                             }
                     }
-                    Text(L10n.slideshowVideoDurationHint(language))
-                        .font(.caption2)
-                        .foregroundColor(.white.opacity(0.35))
                 }
             } else {
                 HStack(alignment: .center, spacing: 10) {
@@ -323,7 +321,7 @@ struct ContentView: View {
                 }
             }
 
-            HStack(alignment: .center, spacing: 10) {
+            HStack(alignment: .top, spacing: 10) {
                 Button(L10n.chooseAudio(language), action: chooseExportAudio)
                     .controlSize(.small)
                 Button(L10n.clearAudio(language), action: clearExportAudio)
@@ -414,9 +412,6 @@ struct ContentView: View {
                 Spacer()
             }
 
-            Text(L10n.slideshowPreviewAudioUsesExport(language))
-                .font(.caption2)
-                .foregroundColor(.white.opacity(0.35))
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
@@ -709,6 +704,26 @@ struct ContentView: View {
                         .lineLimit(1)
                 }
             }
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Image(systemName: "rectangle.compress.vertical")
+                        .font(.caption)
+                        .foregroundColor(theme.accent)
+                    Text(L10n.itemRowSize(language))
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.7))
+                    Spacer()
+                    Text(L10n.compact(language))
+                        .font(.caption2)
+                        .foregroundColor(.white.opacity(0.35))
+                    Text(L10n.comfortable(language))
+                        .font(.caption2)
+                        .foregroundColor(.white.opacity(0.35))
+                }
+                Slider(value: $itemRowScale, in: 0.75...1.4, step: 0.05)
+                    .tint(theme.accent)
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
@@ -895,8 +910,6 @@ struct ContentView: View {
 
                 Menu {
                     Button(L10n.renameGroupMenu(language)) { beginRenamingGroup(group) }
-                    Button(L10n.exportGroupSettings(language)) { exportGroupSettings(group) }
-                    Button(L10n.importGroupSettings(language)) { importGroupSettings(into: group.id) }
                     if photoGroups.count > 1 {
                         Button(L10n.deleteGroup(language), role: .destructive) { deleteGroup(group.id) }
                     }
@@ -962,12 +975,30 @@ struct ContentView: View {
                     .onChange(of: previewMode) {
                         if previewMode == .slideshow {
                             selectedItems.removeAll()
+                            slideshowPreviewIsPlaying = true
                         }
                         schedulePreviewRegeneration(delayNanoseconds: 0)
+                    }
+                    if previewMode == .slideshow {
+                        Text(L10n.slideshowPreviewStopToEditHint(language))
+                            .font(.caption2)
+                            .foregroundColor(.white.opacity(0.4))
+                            .lineLimit(2)
+                            .frame(maxWidth: 260, alignment: .leading)
                     }
                 }
                 Spacer()
                 if previewMode == .slideshow {
+                    Button {
+                        slideshowPreviewIsPlaying.toggle()
+                    } label: {
+                        Image(systemName: slideshowPreviewIsPlaying ? "stop.fill" : "play.fill")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.white.opacity(previewSlideshowURL == nil ? 0.3 : 0.75))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(previewSlideshowURL == nil)
+                    .help(slideshowPreviewIsPlaying ? L10n.stopSlideshow(language) : L10n.playSlideshow(language))
                     if let selectedGroup {
                         Text(selectedGroup.displayName(language))
                             .font(.caption)
@@ -989,21 +1020,25 @@ struct ContentView: View {
                 Button(action: clearPreviewSelection) { Image(systemName: "xmark.circle.fill").font(.system(size: 14)).foregroundColor(.white.opacity(0.3)) }.buttonStyle(.plain)
             }.padding(.horizontal, 16).padding(.vertical, 10)
             Divider().background(theme.divider)
-            if previewMode == .slideshow {
-                slideshowPreviewSettingsPanel
-                Divider().background(theme.divider)
-            }
             ZStack {
                 theme.previewSurface
                 if previewMode == .slideshow {
                     if let previewSlideshowURL {
-                        SlideshowVideoPreviewCanvas(
-                            url: previewSlideshowURL,
-                            isMuted: fullscreenSlideshowWindowController != nil || (
-                                exportAudioDisplayName.isEmpty &&
-                                !(exportIncludeOriginalVideoAudio && (selectedGroup?.photoItems.contains(where: { $0.mediaKind.isVideo }) == true))
+                        ZStack {
+                            SlideshowVideoPreviewCanvas(
+                                url: previewSlideshowURL,
+                                isMuted: fullscreenSlideshowWindowController != nil || (
+                                    exportAudioDisplayName.isEmpty &&
+                                    !(exportIncludeOriginalVideoAudio && (selectedGroup?.photoItems.contains(where: { $0.mediaKind.isVideo }) == true))
+                                ),
+                                isPlaying: slideshowPreviewIsPlaying
                             )
-                        )
+                            Color.clear
+                                .contentShape(Rectangle())
+                                .onTapGesture(count: 2) {
+                                    slideshowPreviewIsPlaying.toggle()
+                                }
+                        }
                         .padding(20)
                     } else if !canPreviewSlideshow {
                         Text(L10n.slideshowPreviewNeedsPhotos(language))
@@ -1049,6 +1084,10 @@ struct ContentView: View {
                 } else if !isGeneratingPreview {
                     Text(L10n.selectPhotoToPreview(language)).font(.caption).foregroundColor(.white.opacity(0.3))
                 }
+            }
+            if previewMode == .slideshow {
+                Divider().background(theme.divider)
+                slideshowPreviewSettingsPanel
             }
         }
     }
@@ -1175,8 +1214,8 @@ struct ContentView: View {
     }
 
     private func restoreWorkspaceIfNeeded() {
-        guard !Self.hasRestoredWorkspaceInProcess else { return }
-        Self.hasRestoredWorkspaceInProcess = true
+        guard !hasRestoredWorkspace else { return }
+        hasRestoredWorkspace = true
         restoreWorkspace()
     }
 
@@ -2240,6 +2279,7 @@ struct ContentView: View {
             try? FileManager.default.removeItem(at: previewSlideshowURL)
         }
         previewSlideshowURL = url
+        slideshowPreviewIsPlaying = true
         fullscreenSlideshowCurrentGroupID = selectedGroupID
         fullscreenSlideshowPreparingNextGroup = false
         if fullscreenSlideshowWindowController != nil {
@@ -2253,6 +2293,7 @@ struct ContentView: View {
             try? FileManager.default.removeItem(at: previewSlideshowURL)
         }
         previewSlideshowURL = nil
+        slideshowPreviewIsPlaying = true
         if fullscreenSlideshowWindowController != nil {
             openFullscreenSlideshowPreview()
         }

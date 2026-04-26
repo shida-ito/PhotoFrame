@@ -78,7 +78,11 @@ enum L10n {
     static func previewModeSlideshow(_ language: AppLanguage) -> String { language == .japanese ? "スライドショー" : "Slideshow" }
     static func slideshowPreviewNeedsPhotos(_ language: AppLanguage) -> String { language == .japanese ? "スライドショープレビューには同じグループに1件以上の項目が必要です" : "Slideshow preview needs at least one item in the group" }
     static func slideshowPreviewAudioUsesExport(_ language: AppLanguage) -> String { language == .japanese ? "ここで選んだ長さと音声設定は動画書き出しにも使います。" : "The timing and audio settings selected here are also used for video export." }
+    static func slideshowPreviewDoubleClickHint(_ language: AppLanguage) -> String { language == .japanese ? "プレビューをダブルクリックで再生 / 停止" : "Double-click the preview to play / stop" }
+    static func slideshowPreviewStopToEditHint(_ language: AppLanguage) -> String { language == .japanese ? "スライドショーではフレーム設定を反映できないので写真タブで調整してください。" : "Frame settings are not applied in slideshow mode, so adjust them in the Photo tab." }
     static func preparingSlideshowPreview(_ language: AppLanguage) -> String { language == .japanese ? "スライドショーを準備中…" : "Preparing slideshow preview…" }
+    static func playSlideshow(_ language: AppLanguage) -> String { language == .japanese ? "スライドショーを再生" : "Play Slideshow" }
+    static func stopSlideshow(_ language: AppLanguage) -> String { language == .japanese ? "スライドショーを停止" : "Stop Slideshow" }
     static func fullscreenPreview(_ language: AppLanguage) -> String { language == .japanese ? "全画面プレビュー" : "Fullscreen Preview" }
     static func closeFullscreenPreview(_ language: AppLanguage) -> String { language == .japanese ? "全画面を閉じる" : "Close Fullscreen" }
     static func fullscreenSlideshowSettings(_ language: AppLanguage) -> String { language == .japanese ? "全画面スライドショー" : "Fullscreen Slideshow" }
@@ -97,6 +101,9 @@ enum L10n {
     static func editingGroup(_ groupName: String, _ language: AppLanguage) -> String { language == .japanese ? "編集中のグループ: \(groupName)" : "Editing Group: \(groupName)" }
     static func frameWidth(_ language: AppLanguage) -> String { language == .japanese ? "フレーム幅" : "Frame Width" }
     static func previewQuality(_ language: AppLanguage) -> String { language == .japanese ? "プレビュー品質" : "Preview Quality" }
+    static func itemRowSize(_ language: AppLanguage) -> String { language == .japanese ? "項目サイズ" : "Item Size" }
+    static func compact(_ language: AppLanguage) -> String { language == .japanese ? "小" : "Compact" }
+    static func comfortable(_ language: AppLanguage) -> String { language == .japanese ? "大" : "Comfortable" }
     static func previewFast(_ language: AppLanguage) -> String { language == .japanese ? "高速 (400px)" : "Fast (400px)" }
     static func previewStandard(_ language: AppLanguage) -> String { language == .japanese ? "標準 (600px)" : "Standard (600px)" }
     static func previewHigh(_ language: AppLanguage) -> String { language == .japanese ? "高品質 (1000px)" : "High (1000px)" }

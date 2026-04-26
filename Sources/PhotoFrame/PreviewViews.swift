@@ -144,6 +144,7 @@ struct LiveVideoPreviewCanvas: View {
 struct SlideshowVideoPreviewCanvas: View {
     let url: URL
     var isMuted = true
+    var isPlaying = true
     var loops = true
     var onPlaybackEnded: (() -> Void)? = nil
 
@@ -167,6 +168,7 @@ struct SlideshowVideoPreviewCanvas: View {
             LoopingVideoPlayerView(
                 url: url,
                 isMuted: isMuted,
+                isPlaying: isPlaying,
                 loops: loops,
                 onPlaybackEnded: onPlaybackEnded
             )
@@ -198,6 +200,7 @@ struct LoopingVideoPlayerView: NSViewRepresentable {
     var videoComposition: AVVideoComposition? = nil
     var compositionSignature: String = ""
     var isMuted: Bool = true
+    var isPlaying: Bool = true
     var loops: Bool = true
     var onPlaybackEnded: (() -> Void)? = nil
 
@@ -216,6 +219,7 @@ struct LoopingVideoPlayerView: NSViewRepresentable {
             videoComposition: videoComposition,
             compositionSignature: compositionSignature,
             isMuted: isMuted,
+            isPlaying: isPlaying,
             loops: loops,
             onPlaybackEnded: onPlaybackEnded
         )
@@ -229,6 +233,7 @@ struct LoopingVideoPlayerView: NSViewRepresentable {
             videoComposition: videoComposition,
             compositionSignature: compositionSignature,
             isMuted: isMuted,
+            isPlaying: isPlaying,
             loops: loops,
             onPlaybackEnded: onPlaybackEnded
         )
@@ -244,6 +249,7 @@ struct LoopingVideoPlayerView: NSViewRepresentable {
         private var currentURL: URL?
         private var currentCompositionSignature = ""
         private var currentMuted = true
+        private var currentPlaying = true
         private var currentLoops = true
         private var player: AVPlayer?
         private var looper: AVPlayerLooper?
@@ -256,6 +262,7 @@ struct LoopingVideoPlayerView: NSViewRepresentable {
             videoComposition: AVVideoComposition?,
             compositionSignature: String,
             isMuted: Bool,
+            isPlaying: Bool,
             loops: Bool,
             onPlaybackEnded: (() -> Void)?
         ) {
@@ -264,9 +271,21 @@ struct LoopingVideoPlayerView: NSViewRepresentable {
             guard currentURL != url ||
                     player == nil ||
                     currentMuted != isMuted ||
+                    currentPlaying != isPlaying ||
                     currentLoops != loops ||
                     currentCompositionSignature != compositionSignature else {
                 view.player = player
+                return
+            }
+
+            if currentURL == url,
+               player != nil,
+               currentMuted == isMuted,
+               currentLoops == loops,
+               currentCompositionSignature == compositionSignature {
+                currentPlaying = isPlaying
+                view.player = player
+                updatePlaybackState()
                 return
             }
 
@@ -305,12 +324,23 @@ struct LoopingVideoPlayerView: NSViewRepresentable {
             self.currentURL = url
             self.currentCompositionSignature = compositionSignature
             self.currentMuted = isMuted
+            self.currentPlaying = isPlaying
             self.currentLoops = loops
             self.player = player
             self.looper = looper
 
             view.player = player
-            player.play()
+            updatePlaybackState()
+        }
+
+        private func updatePlaybackState() {
+            guard let player else { return }
+            if currentPlaying {
+                player.play()
+            } else {
+                player.pause()
+                player.seek(to: .zero)
+            }
         }
 
         func stop() {
@@ -324,6 +354,7 @@ struct LoopingVideoPlayerView: NSViewRepresentable {
             currentURL = nil
             currentCompositionSignature = ""
             currentMuted = true
+            currentPlaying = true
             currentLoops = true
             playbackEndedHandler = nil
         }
@@ -332,6 +363,7 @@ struct LoopingVideoPlayerView: NSViewRepresentable {
 
 struct PhotoRowView: View {
     @AppStorage("uiTheme") private var uiThemeRaw = UITheme.midnight.rawValue
+    @AppStorage("itemRowScale") private var itemRowScale = 1.0
     @ObservedObject var item: PhotoItem
     let isSelected: Bool
     let language: AppLanguage
@@ -356,6 +388,26 @@ struct PhotoRowView: View {
         }
     }
 
+    private var rowScale: CGFloat {
+        CGFloat(min(max(itemRowScale, 0.75), 1.4))
+    }
+
+    private var thumbnailSize: CGFloat {
+        44 * rowScale
+    }
+
+    private var rowPadding: CGFloat {
+        8 * rowScale
+    }
+
+    private var titleFontSize: CGFloat {
+        12 * rowScale
+    }
+
+    private var statusFontSize: CGFloat {
+        11 * rowScale
+    }
+
     var body: some View {
         Button(action: onSelect) {
             HStack(spacing: 10) {
@@ -370,26 +422,26 @@ struct PhotoRowView: View {
                             .overlay(ProgressView().controlSize(.small))
                     }
                 }
-                .frame(width: 44, height: 44)
+                .frame(width: thumbnailSize, height: thumbnailSize)
                 .clipShape(RoundedRectangle(cornerRadius: 6))
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         Image(systemName: item.mediaKind.isVideo ? "video.fill" : "photo")
-                            .font(.system(size: 10))
+                            .font(.system(size: 10 * rowScale))
                             .foregroundColor(.white.opacity(0.45))
                         Text(item.filename)
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.system(size: titleFontSize, weight: .medium))
                             .foregroundColor(.white.opacity(0.9))
                             .lineLimit(1)
                     }
                     Text(item.status.label(language))
-                        .font(.caption2)
+                        .font(.system(size: statusFontSize))
                         .foregroundColor(currentStatusColor)
                 }
                 Spacer()
             }
-            .padding(8)
+            .padding(rowPadding)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -405,9 +457,9 @@ struct PhotoRowView: View {
         .overlay(alignment: .trailing) {
             Button(action: onRemove) {
                 Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 12))
+                    .font(.system(size: 12 * rowScale))
                     .foregroundColor(.white.opacity(0.3))
-                    .padding(8)
+                    .padding(rowPadding)
             }
             .buttonStyle(.plain)
         }

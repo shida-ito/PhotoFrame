@@ -23,11 +23,12 @@ Stylish and minimal photo framing application for macOS. Add elegant borders and
 - **Per-Group Slideshow Settings**: Each group can keep its own slideshow timing, video-duration mode, added audio, original-video audio mix, and fade-in / fade-out settings.
 - **Slideshow Preview & Export**: Switch the preview between single-photo mode and slideshow mode, adjust timing and audio mix inline, preview fade timing, and export the selected group as a MOV slideshow.
 - **Fullscreen Slideshow**: Play the slideshow preview in fullscreen, with optional automatic advance to the next group.
-- **Group Settings Transfer**: Export or import settings for a single group, or transfer all group settings at once from the File menu.
+- **Group Settings Transfer**: Export or import all group settings at once from the File menu.
 - **Workspace Restore**: Reopen the latest group structure, settings, and photo assignments the next time you launch the app.
 - **Workspace Protection Controls**: If workspace recovery fails, pause auto-save to prevent overwriting, then resume saving or reset the workspace from the warning banner.
 - **Fast Interactive Preview**: Cached previews and live text overlays keep text editing and positioning responsive.
 - **Video Preview & Export**: Preview MOV/MP4 clips inside the frame layout, then export them with the frame and text burned into every frame as MOV.
+- **Adjustable Item Density**: Change the item-row size from the left panel to fit more photos on screen.
 - **Preset Management**: Presets are shown in A-Z order, support hover preview before click-to-apply, and can be saved, overwritten, renamed, deleted, imported, exported, and cleared.
 - **Flexible Selection**: Finder-standard multi-selection (`Shift+Click`, `Cmd+Click`) plus `↑` / `↓` keyboard navigation for selective batch processing.
 - **Preferences**: Choose the UI language, color mode (`Midnight`, `Graphite`, `Black`, `Paper`, `Forest`), and font picker mode from `PhotoFrame > Settings...`.
@@ -63,12 +64,15 @@ Once complete, you will find `PhotoFrame.app` in the project root.
 - **Group Row Menu**: Rename or delete a group from the `...` menu on each group row.
 - **Move to Group**: Select one or more photos, then drag the selected photos onto another group.
 - **Drop Into Group**: Drop JPEG, MOV, or MP4 files directly onto a group row to add them to that group.
+- **Item Size**: Use the `Item Size` slider in the left panel to make photo rows more compact or more comfortable.
 - **Clear Photos / Undo Clear**: Clear only the photos while keeping your groups, then restore the most recent clear with **Undo Clear** if needed.
 - **Delete Selected Photos**: After multi-selecting photos, click the `×` button on any selected photo row to remove the whole selection in one action.
 - **Multi-Selection**: Use macOS standard controls to select items in the list (**Click** to select one, **Cmd+Click** to toggle, **Shift+Click** for range selection).
 - **Keyboard Navigation**: After selecting the photo list, use `↑` / `↓` to move the current item selection up and down.
 - **Preview**: The preview panel shows the first item in your current selection. Video items play in-place inside the framed preview.
 - **Slideshow Mode**: Switch the preview header between `Photo` and `Slideshow`. Slideshow mode previews the current group's photo order and uses that same group-based flow for MOV export.
+- **Slideshow Playback Controls**: Use the play/stop button in the preview header, or double-click the slideshow preview to start and stop playback.
+- **Frame Setting Note**: Slideshow mode does not apply frame-setting edits live. Switch back to the `Photo` tab to adjust frame settings, then return to `Slideshow`.
 - **Photo Order**: Drag photo rows within a group to change slideshow order, or drag them onto another group to move them there.
 - Most settings update the preview instantly, allowing you to fine-tune the look before processing.
 - **Preview Quality**: Use the quality picker in the settings panel to trade speed for detail, from `Fast (400px)` up to `4K (3840px)`.
@@ -99,7 +103,7 @@ Once complete, you will find `PhotoFrame.app` in the project root.
 - **Overwrite Preset**: Use the `...` menu on a preset row to replace an existing preset with the current settings.
 - **Rename Preset**: Open the `...` menu on a preset row and choose **Rename Preset...**.
 - **Delete Preset**: Remove a single preset or clear them all from the same menu.
-- **Group Settings Export / Import**: Use the `...` menu on each group row for single-group settings, or use **File** menu commands to export or import all group settings together.
+- **Group Settings Export / Import**: Use **File** menu commands to export or import all group settings together.
 - **Preferences**: Open **PhotoFrame > Settings...** to:
     - switch the display language between English and Japanese
     - choose the UI color mode: `Midnight`, `Graphite`, `Black`, `Paper`, or `Forest`
