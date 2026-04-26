@@ -197,6 +197,8 @@ struct ImageProcessor {
             )
         case .png:
             try savePNG(image: finalImage, to: outputURL, properties: metadata)
+        case .slideshowVideo:
+            throw ProcessingError.cannotWriteOutput
         }
     }
 

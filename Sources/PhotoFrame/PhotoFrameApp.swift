@@ -1,13 +1,35 @@
 import SwiftUI
 
+extension Notification.Name {
+    static let photoFrameExportAllGroupSettings = Notification.Name("photoFrameExportAllGroupSettings")
+    static let photoFrameImportAllGroupSettings = Notification.Name("photoFrameImportAllGroupSettings")
+}
+
 @main
 struct PhotoFrameApp: App {
+    @AppStorage("appLanguage") private var appLanguageRaw = AppLanguage.english.rawValue
+
+    private var language: AppLanguage {
+        AppLanguage(rawValue: appLanguageRaw) ?? .english
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .frame(minWidth: 800, minHeight: 600)
         }
         .windowStyle(.hiddenTitleBar)
+        .commands {
+            CommandGroup(after: .saveItem) {
+                Divider()
+                Button(L10n.exportAllGroupSettings(language)) {
+                    NotificationCenter.default.post(name: .photoFrameExportAllGroupSettings, object: nil)
+                }
+                Button(L10n.importAllGroupSettings(language)) {
+                    NotificationCenter.default.post(name: .photoFrameImportAllGroupSettings, object: nil)
+                }
+            }
+        }
 
         Settings {
             PreferencesView()
@@ -19,6 +41,7 @@ struct PreferencesView: View {
     @AppStorage("appLanguage") private var appLanguageRaw = AppLanguage.english.rawValue
     @AppStorage("uiTheme") private var uiThemeRaw = UITheme.midnight.rawValue
     @AppStorage("fontSelectionDisplayMode") private var fontSelectionDisplayModeRaw = FontSelectionDisplayMode.compact.rawValue
+    @AppStorage("fullscreenSlideshowAutoAdvanceGroups") private var fullscreenSlideshowAutoAdvanceGroups = false
 
     private var language: AppLanguage {
         AppLanguage(rawValue: appLanguageRaw) ?? .english
@@ -78,6 +101,12 @@ struct PreferencesView: View {
                 }
             } header: {
                 Text(L10n.interface(language))
+            }
+
+            Section {
+                Toggle(L10n.autoAdvanceGroups(language), isOn: $fullscreenSlideshowAutoAdvanceGroups)
+            } header: {
+                Text(L10n.fullscreenSlideshowSettings(language))
             }
         }
         .formStyle(.grouped)

@@ -4,6 +4,16 @@ enum PresetCodecError: Error {
     case invalidPresetFile
 }
 
+struct GroupSettingsTransfer: Codable, Sendable {
+    var name: String
+    var settingsState: FrameSettingsState
+    var slideshowSettings: SlideshowSettings
+}
+
+struct GroupSettingsCollectionTransfer: Codable, Sendable {
+    var groups: [GroupSettingsTransfer]
+}
+
 enum PresetCodec {
     static func decodeStoredPresets(from data: Data) -> [Preset] {
         guard !data.isEmpty else { return [] }
@@ -13,6 +23,50 @@ enum PresetCodec {
 
     static func encodeStoredPresets(_ presets: [Preset]) -> Data? {
         try? JSONEncoder().encode(sortedPresets(presets))
+    }
+
+    static func decodeGroupSettingsTransfer(from data: Data) throws -> GroupSettingsTransfer {
+        let decoder = JSONDecoder()
+        guard let transfer = try? decoder.decode(GroupSettingsTransfer.self, from: data) else {
+            throw PresetCodecError.invalidPresetFile
+        }
+        return transfer
+    }
+
+    static func encodeGroupSettingsTransfer(_ transfer: GroupSettingsTransfer) throws -> Data {
+        try encodeASCIIJSON(transfer)
+    }
+
+    static func decodeGroupSettingsCollectionTransfer(from data: Data) throws -> GroupSettingsCollectionTransfer {
+        let decoder = JSONDecoder()
+        if let transfer = try? decoder.decode(GroupSettingsCollectionTransfer.self, from: data) {
+            return transfer
+        }
+        if let groups = try? decoder.decode([GroupSettingsTransfer].self, from: data) {
+            return GroupSettingsCollectionTransfer(groups: groups)
+        }
+        throw PresetCodecError.invalidPresetFile
+    }
+
+    static func encodeGroupSettingsCollectionTransfer(_ transfer: GroupSettingsCollectionTransfer) throws -> Data {
+        try encodeASCIIJSON(transfer)
+    }
+
+    private static func encodeASCIIJSON<T: Encodable>(_ value: T) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+
+        let jsonData = try encoder.encode(value)
+        guard let jsonString = String(data: jsonData, encoding: .utf8) else {
+            throw PresetCodecError.invalidPresetFile
+        }
+
+        let asciiString = makeASCIIJSONString(from: jsonString)
+        guard let asciiData = asciiString.data(using: .ascii) else {
+            throw PresetCodecError.invalidPresetFile
+        }
+
+        return asciiData
     }
 
     static func decodeTransferPayload(from data: Data) throws -> [Preset] {

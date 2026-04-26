@@ -19,6 +19,10 @@ Stylish and minimal photo framing application for macOS. Add elegant borders and
     - You can also enter any tag name found in the current photo as `{TagName}`.
     - Control font, color, size, X/Y position, alignment, and visibility per layer.
 - **Photo Groups**: Organize photos into groups in the left panel, drag to reorder them, and apply one shared layout setting set per group.
+- **Per-Group Slideshow Settings**: Each group can keep its own slideshow timing, audio file, and fade-in / fade-out settings.
+- **Slideshow Preview & Export**: Switch the preview between single-photo mode and slideshow mode, add audio, preview fade timing, and export the selected group as a MOV slideshow.
+- **Fullscreen Slideshow**: Play the slideshow preview in fullscreen, with optional automatic advance to the next group.
+- **Group Settings Transfer**: Export or import settings for a single group, or transfer all group settings at once from the File menu.
 - **Workspace Restore**: Reopen the latest group structure, settings, and photo assignments the next time you launch the app.
 - **Fast Interactive Preview**: Cached previews and live text overlays keep text editing and positioning responsive.
 - **Video Preview & Export**: Preview MOV/MP4 clips inside the frame layout, then export them with the frame and text burned into every frame as MOV.
@@ -62,12 +66,15 @@ Once complete, you will find `PhotoFrame.app` in the project root.
 - **Multi-Selection**: Use macOS standard controls to select items in the list (**Click** to select one, **Cmd+Click** to toggle, **Shift+Click** for range selection).
 - **Keyboard Navigation**: After selecting the photo list, use `↑` / `↓` to move the current item selection up and down.
 - **Preview**: The preview panel shows the first item in your current selection. Video items play in-place inside the framed preview.
+- **Slideshow Mode**: Switch the preview header between `Photo` and `Slideshow`. Slideshow mode previews the current group's photo order and uses that same group-based flow for MOV export.
+- **Photo Order**: Drag photo rows within a group to change slideshow order, or drag them onto another group to move them there.
 - Most settings update the preview instantly, allowing you to fine-tune the look before processing.
-- **Preview Quality**: Use the quality picker in the settings panel to trade speed for detail.
+- **Preview Quality**: Use the quality picker in the settings panel to trade speed for detail, from `Fast (400px)` up to `4K (3840px)`.
 - **Multiple Windows**: Use **File > New Window** or `Cmd+N` to open another working window.
 
 ### 3. Configuring Frame & Text
 - **Group Settings**: The settings panel always edits the currently selected group. Use separate groups when you want different layouts for different subsets of photos.
+- **Slideshow Settings**: In slideshow preview mode, set seconds per photo, choose an audio file, and adjust fade-in / fade-out per group.
 - **Aspect Ratio**: Select a grid option for the outer frame. If using "Custom", enter the ratio values (e.g., `4:5`).
 - **Photo Position**: Use the Vertical and Horizontal sliders in the "Photo Position" section to offset the image within its designated area.
 - **Frame Width**: Adjust the amount of space around the image. Set it to `0` for a borderless edge.
@@ -88,16 +95,19 @@ Once complete, you will find `PhotoFrame.app` in the project root.
 - **Overwrite Preset**: Use the `...` menu on a preset row to replace an existing preset with the current settings.
 - **Rename Preset**: Open the `...` menu on a preset row and choose **Rename Preset...**.
 - **Delete Preset**: Remove a single preset or clear them all from the same menu.
+- **Group Settings Export / Import**: Use the `...` menu on each group row for single-group settings, or use **File** menu commands to export or import all group settings together.
 - **Preferences**: Open **PhotoFrame > Settings...** to:
     - switch the display language between English and Japanese
     - choose the UI color mode: `Midnight`, `Graphite`, `Black`, `Paper`, or `Forest`
     - choose the font picker mode: `Search` or `Full List`
+    - choose whether fullscreen slideshow playback advances automatically to the next group
 
 ### 5. Export
 - **Export Sel (...)**: Click this to export only the photos currently selected in the list (the count is shown in the button).
 - **Export All**: Click this to export every photo in your list, regardless of selection.
 - **Export Settings**: Before choosing the destination folder, a dialog lets you set output format, image size, `Long Edge Custom`, JPEG quality, filename prefix, and whether EXIF / metadata should be copied.
 - **Video Export**: Video items are exported as `.mov`. The selected image size setting also scales video exports, and audio is preserved when the source file contains audio.
+- **Slideshow Export**: In slideshow preview mode, export works per group. `Current Group` exports the full current group's photo order as one MOV slideshow, and `All Groups` exports one slideshow MOV per group.
 - Select an output directory in the dialog.
 - The app saves files using the selected format and filename prefix.
 

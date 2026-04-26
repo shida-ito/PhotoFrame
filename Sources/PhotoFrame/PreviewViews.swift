@@ -137,6 +137,9 @@ struct LiveVideoPreviewCanvas: View {
 
 struct LoopingVideoPlayerView: NSViewRepresentable {
     let url: URL
+    var isMuted: Bool = true
+    var loops: Bool = true
+    var onPlaybackEnded: (() -> Void)? = nil
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -147,12 +150,24 @@ struct LoopingVideoPlayerView: NSViewRepresentable {
         view.controlsStyle = .none
         view.videoGravity = .resizeAspect
         view.showsSharingServiceButton = false
-        context.coordinator.attach(to: view, url: url)
+        context.coordinator.attach(
+            to: view,
+            url: url,
+            isMuted: isMuted,
+            loops: loops,
+            onPlaybackEnded: onPlaybackEnded
+        )
         return view
     }
 
     func updateNSView(_ nsView: AVPlayerView, context: Context) {
-        context.coordinator.attach(to: nsView, url: url)
+        context.coordinator.attach(
+            to: nsView,
+            url: url,
+            isMuted: isMuted,
+            loops: loops,
+            onPlaybackEnded: onPlaybackEnded
+        )
     }
 
     static func dismantleNSView(_ nsView: AVPlayerView, coordinator: Coordinator) {
@@ -163,11 +178,23 @@ struct LoopingVideoPlayerView: NSViewRepresentable {
     @MainActor
     final class Coordinator {
         private var currentURL: URL?
-        private var player: AVQueuePlayer?
+        private var currentMuted = true
+        private var currentLoops = true
+        private var player: AVPlayer?
         private var looper: AVPlayerLooper?
+        private var playbackEndedObserver: NSObjectProtocol?
+        private var playbackEndedHandler: (() -> Void)?
 
-        func attach(to view: AVPlayerView, url: URL) {
-            guard currentURL != url || player == nil else {
+        func attach(
+            to view: AVPlayerView,
+            url: URL,
+            isMuted: Bool,
+            loops: Bool,
+            onPlaybackEnded: (() -> Void)?
+        ) {
+            playbackEndedHandler = onPlaybackEnded
+
+            guard currentURL != url || player == nil || currentMuted != isMuted || currentLoops != loops else {
                 view.player = player
                 return
             }
@@ -175,12 +202,37 @@ struct LoopingVideoPlayerView: NSViewRepresentable {
             stop()
 
             let playerItem = AVPlayerItem(url: url)
-            let player = AVQueuePlayer()
-            player.isMuted = true
-            player.actionAtItemEnd = .none
-            let looper = AVPlayerLooper(player: player, templateItem: playerItem)
+            let player: AVPlayer
+            let looper: AVPlayerLooper?
+
+            if loops {
+                let queuePlayer = AVQueuePlayer()
+                queuePlayer.isMuted = isMuted
+                queuePlayer.actionAtItemEnd = .none
+                player = queuePlayer
+                looper = AVPlayerLooper(player: queuePlayer, templateItem: playerItem)
+            } else {
+                let singlePlayer = AVPlayer(playerItem: playerItem)
+                singlePlayer.isMuted = isMuted
+                singlePlayer.actionAtItemEnd = .pause
+                player = singlePlayer
+                looper = nil
+                playbackEndedObserver = NotificationCenter.default.addObserver(
+                    forName: .AVPlayerItemDidPlayToEndTime,
+                    object: playerItem,
+                    queue: .main
+                ) { [weak self] _ in
+                    Task { @MainActor in
+                        self?.playbackEndedHandler?()
+                    }
+                }
+            }
+
+            player.isMuted = isMuted
 
             self.currentURL = url
+            self.currentMuted = isMuted
+            self.currentLoops = loops
             self.player = player
             self.looper = looper
 
@@ -192,7 +244,14 @@ struct LoopingVideoPlayerView: NSViewRepresentable {
             player?.pause()
             player = nil
             looper = nil
+            if let playbackEndedObserver {
+                NotificationCenter.default.removeObserver(playbackEndedObserver)
+                self.playbackEndedObserver = nil
+            }
             currentURL = nil
+            currentMuted = true
+            currentLoops = true
+            playbackEndedHandler = nil
         }
     }
 }
@@ -277,6 +336,57 @@ struct PhotoRowView: View {
                     .padding(8)
             }
             .buttonStyle(.plain)
+        }
+    }
+}
+
+struct FullscreenSlideshowPreview: View {
+    let videoURL: URL?
+    let isMuted: Bool
+    let loops: Bool
+    let language: AppLanguage
+    let isPreparingNextGroup: Bool
+    let onPlaybackEnded: (() -> Void)?
+    let onClose: () -> Void
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Color.black
+                .ignoresSafeArea()
+
+            if let videoURL {
+                LoopingVideoPlayerView(
+                    url: videoURL,
+                    isMuted: isMuted,
+                    loops: loops,
+                    onPlaybackEnded: onPlaybackEnded
+                )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+
+            if isPreparingNextGroup {
+                VStack(spacing: 10) {
+                    ProgressView()
+                        .controlSize(.regular)
+                        .tint(.white)
+                    Text(L10n.preparingNextGroup(language))
+                        .font(.headline)
+                        .foregroundColor(.white.opacity(0.9))
+                }
+                .padding(28)
+                .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 18))
+            }
+
+            Button(action: onClose) {
+                Label(L10n.closeFullscreenPreview(language), systemImage: "xmark.circle.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(.black.opacity(0.55), in: Capsule())
+                    .foregroundColor(.white)
+            }
+            .buttonStyle(.plain)
+            .padding(24)
         }
     }
 }

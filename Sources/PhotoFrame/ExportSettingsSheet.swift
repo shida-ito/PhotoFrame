@@ -10,8 +10,17 @@ struct ExportSettingsSheet: View {
     @Binding var customLongEdge: Int
     @Binding var filenamePrefix: String
     @Binding var copyMetadata: Bool
+    @Binding var secondsPerPhoto: Double
+    let audioDisplayName: String?
+    @Binding var fadeInEnabled: Bool
+    @Binding var fadeInDuration: Double
+    @Binding var fadeOutEnabled: Bool
+    @Binding var fadeOutDuration: Double
+    let isSlideshowWorkflow: Bool
     let containsImageItems: Bool
     let containsVideoItems: Bool
+    let onChooseAudio: () -> Void
+    let onClearAudio: () -> Void
     let onConfirm: () -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -30,18 +39,26 @@ struct ExportSettingsSheet: View {
             }
 
             VStack(alignment: .leading, spacing: 14) {
-                if containsImageItems {
+                if isSlideshowWorkflow {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(L10n.exportFormat(language))
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text(ExportFormat.slideshowVideo.title(language))
+                            .font(.callout.weight(.medium))
+                    }
+                } else if containsImageItems {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(L10n.exportFormat(language))
                             .font(.caption)
                             .foregroundColor(.secondary)
                         Picker("", selection: $format) {
-                            ForEach(ExportFormat.allCases) { exportFormat in
+                            ForEach(ExportFormat.imageFormats) { exportFormat in
                                 Text(exportFormat.title(language)).tag(exportFormat)
                             }
                         }
-                        .pickerStyle(.segmented)
                         .labelsHidden()
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
 
@@ -83,6 +100,73 @@ struct ExportSettingsSheet: View {
                         .foregroundColor(.secondary)
                 }
 
+                if format == .slideshowVideo {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(L10n.slideshowSecondsPerPhoto(language))
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        TextField(
+                            "",
+                            value: $secondsPerPhoto,
+                            format: .number.precision(.fractionLength(1...2))
+                        )
+                        .textFieldStyle(.roundedBorder)
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(L10n.slideshowAudio(language))
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        HStack {
+                            Text(audioDisplayName ?? L10n.noAudioSelected(language))
+                                .font(.callout)
+                                .foregroundColor(audioDisplayName == nil ? .secondary : .primary)
+                                .lineLimit(1)
+                            Spacer()
+                            Button(L10n.chooseAudio(language), action: onChooseAudio)
+                            if audioDisplayName != nil {
+                                Button(L10n.clearAudio(language), action: onClearAudio)
+                            }
+                        }
+                    }
+
+                    Toggle(L10n.fadeIn(language), isOn: $fadeInEnabled)
+
+                    if fadeInEnabled {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(L10n.fadeDuration(language))
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            TextField(
+                                "",
+                                value: $fadeInDuration,
+                                format: .number.precision(.fractionLength(1...2))
+                            )
+                            .textFieldStyle(.roundedBorder)
+                        }
+                    }
+
+                    Toggle(L10n.fadeOut(language), isOn: $fadeOutEnabled)
+
+                    if fadeOutEnabled {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(L10n.fadeDuration(language))
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            TextField(
+                                "",
+                                value: $fadeOutDuration,
+                                format: .number.precision(.fractionLength(1...2))
+                            )
+                            .textFieldStyle(.roundedBorder)
+                        }
+                    }
+
+                    Text(L10n.slideshowExportNote(language))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
                 if containsImageItems && format == .jpeg {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
@@ -110,10 +194,19 @@ struct ExportSettingsSheet: View {
             }
         }
         .padding(20)
-        .frame(width: 420)
+        .frame(width: 460)
     }
 
     private var scopeDescription: String {
+        if format == .slideshowVideo {
+            switch scope {
+            case .selected:
+                return L10n.exportCurrentGroup(itemCount, language)
+            case .all:
+                return L10n.exportAllGroups(language)
+            }
+        }
+
         switch scope {
         case .selected:
             return L10n.processSelected(itemCount, language)

@@ -32,14 +32,32 @@ enum L10n {
     static func renameGroupMenu(_ language: AppLanguage) -> String { language == .japanese ? "名前を変更..." : "Rename Group..." }
     static func renameGroupAction(_ language: AppLanguage) -> String { language == .japanese ? "名前変更" : "Rename Group" }
     static func deleteGroup(_ language: AppLanguage) -> String { language == .japanese ? "グループを削除" : "Delete Group" }
+    static func exportGroupSettings(_ language: AppLanguage) -> String { language == .japanese ? "Group設定を書き出す..." : "Export Group Settings..." }
+    static func importGroupSettings(_ language: AppLanguage) -> String { language == .japanese ? "Group設定を読み込む..." : "Import Group Settings..." }
+    static func groupSettingsMenu(_ language: AppLanguage) -> String { language == .japanese ? "Group設定" : "Group Settings" }
+    static func exportAllGroupSettings(_ language: AppLanguage) -> String { language == .japanese ? "全てのGroup設定を書き出す..." : "Export All Group Settings..." }
+    static func importAllGroupSettings(_ language: AppLanguage) -> String { language == .japanese ? "全てのGroup設定を読み込む..." : "Import All Group Settings..." }
+    static func groupSettingsImportFailed(_ language: AppLanguage) -> String { language == .japanese ? "Group設定の読み込みに失敗しました" : "Failed to import group settings" }
+    static func groupSettingsExportFailed(_ language: AppLanguage) -> String { language == .japanese ? "Group設定の書き出しに失敗しました" : "Failed to export group settings" }
+    static func invalidGroupSettingsFile(_ language: AppLanguage) -> String { language == .japanese ? "有効な PhotoFrame Group設定 JSON ではありません。" : "The selected file is not a valid PhotoFrame group settings JSON." }
     static func deleteSelectedPhotos(_ language: AppLanguage) -> String { language == .japanese ? "選択を削除" : "Delete Selected" }
     static func moveToGroup(_ language: AppLanguage) -> String { language == .japanese ? "グループへ移動" : "Move to Group" }
     static func processSelected(_ count: Int, _ language: AppLanguage) -> String { language == .japanese ? "選択を書き出し (\(count))" : "Export Sel (\(count))" }
     static func processing(_ language: AppLanguage) -> String { language == .japanese ? "書き出し中…" : "Exporting…" }
     static func processAll(_ language: AppLanguage) -> String { language == .japanese ? "すべて書き出し" : "Export All" }
+    static func exportCurrentGroup(_ count: Int, _ language: AppLanguage) -> String { language == .japanese ? "現在のGroupを書き出し (\(count))" : "Export Current Group (\(count))" }
+    static func exportAllGroups(_ language: AppLanguage) -> String { language == .japanese ? "すべてのGroupを書き出し" : "Export All Groups" }
     static func exportSettingsTitle(_ language: AppLanguage) -> String { language == .japanese ? "書き出し設定" : "Export Settings" }
     static func exportFormat(_ language: AppLanguage) -> String { language == .japanese ? "形式" : "Format" }
     static func exportSize(_ language: AppLanguage) -> String { language == .japanese ? "画像サイズ" : "Image Size" }
+    static func slideshowSecondsPerPhoto(_ language: AppLanguage) -> String { language == .japanese ? "1枚あたりの秒数" : "Seconds Per Photo" }
+    static func slideshowAudio(_ language: AppLanguage) -> String { language == .japanese ? "サウンド" : "Sound" }
+    static func chooseAudio(_ language: AppLanguage) -> String { language == .japanese ? "音声を選択..." : "Choose Audio..." }
+    static func clearAudio(_ language: AppLanguage) -> String { language == .japanese ? "音声を外す" : "Remove Audio" }
+    static func noAudioSelected(_ language: AppLanguage) -> String { language == .japanese ? "音声未選択" : "No audio selected" }
+    static func fadeIn(_ language: AppLanguage) -> String { language == .japanese ? "フェードイン" : "Fade In" }
+    static func fadeOut(_ language: AppLanguage) -> String { language == .japanese ? "フェードアウト" : "Fade Out" }
+    static func fadeDuration(_ language: AppLanguage) -> String { language == .japanese ? "フェード秒数" : "Fade Duration" }
     static func customLongEdge(_ language: AppLanguage) -> String { language == .japanese ? "カスタム長辺(px)" : "Custom Long Edge (px)" }
     static func jpegQuality(_ language: AppLanguage) -> String { language == .japanese ? "JPEG 品質" : "JPEG Quality" }
     static func filenamePrefix(_ language: AppLanguage) -> String { language == .japanese ? "ファイル名プレフィックス" : "Filename Prefix" }
@@ -47,8 +65,23 @@ enum L10n {
     static func exportDestination(_ language: AppLanguage) -> String { language == .japanese ? "書き出し先フォルダを選択します。" : "Choose an output folder after confirming these settings." }
     static func exportAction(_ language: AppLanguage) -> String { language == .japanese ? "書き出し" : "Export" }
     static func videoExportNote(_ language: AppLanguage) -> String { language == .japanese ? "動画は MOV で書き出します。サイズ設定は動画にも適用され、音声があれば保持します。" : "Videos export as MOV. Size settings also apply to video, and audio is preserved when present." }
+    static func slideshowExportNote(_ language: AppLanguage) -> String { language == .japanese ? "MOV で書き出します。選択書き出しは選択中の写真をグループごとに1本へ、すべて書き出しは各グループを1本の動画にまとめます。" : "Exports as MOV. Selected export creates one video per group from the selected photos, and Export All creates one video per group." }
     static func preview(_ language: AppLanguage) -> String { language == .japanese ? "プレビュー" : "Preview" }
     static func selectPhotoToPreview(_ language: AppLanguage) -> String { language == .japanese ? "写真または動画を選択するとプレビューを表示します" : "Select a photo or video to preview" }
+    static func previewModePhoto(_ language: AppLanguage) -> String { language == .japanese ? "写真" : "Photo" }
+    static func previewModeSlideshow(_ language: AppLanguage) -> String { language == .japanese ? "スライドショー" : "Slideshow" }
+    static func slideshowPreviewNeedsPhotos(_ language: AppLanguage) -> String { language == .japanese ? "スライドショープレビューには同じグループに1枚以上の写真が必要です" : "Slideshow preview needs at least one photo in the group" }
+    static func slideshowPreviewAudioUsesExport(_ language: AppLanguage) -> String { language == .japanese ? "ここで選んだ音声と秒数は動画書き出しにも使います。" : "The audio and timing selected here are also used for video export." }
+    static func preparingSlideshowPreview(_ language: AppLanguage) -> String { language == .japanese ? "スライドショーを準備中…" : "Preparing slideshow preview…" }
+    static func fullscreenPreview(_ language: AppLanguage) -> String { language == .japanese ? "全画面プレビュー" : "Fullscreen Preview" }
+    static func closeFullscreenPreview(_ language: AppLanguage) -> String { language == .japanese ? "全画面を閉じる" : "Close Fullscreen" }
+    static func fullscreenSlideshowSettings(_ language: AppLanguage) -> String { language == .japanese ? "全画面スライドショー" : "Fullscreen Slideshow" }
+    static func autoAdvanceGroups(_ language: AppLanguage) -> String { language == .japanese ? "終了後に次のGroupへ進む" : "Advance To Next Group After Playback" }
+    static func preparingNextGroup(_ language: AppLanguage) -> String { language == .japanese ? "次のGroupを準備中…" : "Preparing next group…" }
+    static func workspaceRecoveryTitle(_ language: AppLanguage) -> String { language == .japanese ? "ワークスペース復元" : "Workspace Recovery" }
+    static func workspacePrimaryRestoreFailed(_ language: AppLanguage) -> String { language == .japanese ? "現在のワークスペース保存データを読めなかったため、バックアップから復元しました。" : "The current workspace data could not be read, so the app restored from backup." }
+    static func workspaceRestoreFailedNoBackup(_ language: AppLanguage) -> String { language == .japanese ? "ワークスペース保存データを復元できず、利用可能なバックアップもありません。このセッションでは自動保存を停止して、これ以上の上書きを防ぎます。" : "The workspace data could not be restored and no backup is available. Auto-save is disabled for this session to prevent overwriting more data." }
+    static func workspaceAutoSavePaused(_ language: AppLanguage) -> String { language == .japanese ? "ワークスペース保護のため、このセッションでは自動保存を停止しています。" : "Auto-save is paused for this session to protect the workspace data." }
     static func settings(_ language: AppLanguage) -> String { language == .japanese ? "設定" : "Settings" }
     static func editingGroup(_ groupName: String, _ language: AppLanguage) -> String { language == .japanese ? "編集中のグループ: \(groupName)" : "Editing Group: \(groupName)" }
     static func frameWidth(_ language: AppLanguage) -> String { language == .japanese ? "フレーム幅" : "Frame Width" }
@@ -57,10 +90,13 @@ enum L10n {
     static func previewStandard(_ language: AppLanguage) -> String { language == .japanese ? "標準 (600px)" : "Standard (600px)" }
     static func previewHigh(_ language: AppLanguage) -> String { language == .japanese ? "高品質 (1000px)" : "High (1000px)" }
     static func previewUltra(_ language: AppLanguage) -> String { language == .japanese ? "最高品質 (1600px)" : "Ultra (1600px)" }
+    static func preview2K(_ language: AppLanguage) -> String { language == .japanese ? "2K (2048px)" : "2K (2048px)" }
+    static func preview4K(_ language: AppLanguage) -> String { language == .japanese ? "4K (3840px)" : "4K (3840px)" }
     static func savePresetTitle(_ language: AppLanguage) -> String { language == .japanese ? "プリセットを保存" : "Save Preset" }
     static func renamePresetTitle(_ language: AppLanguage) -> String { language == .japanese ? "プリセット名を変更" : "Rename Preset" }
     static func presetName(_ language: AppLanguage) -> String { language == .japanese ? "プリセット名" : "Preset Name" }
     static func save(_ language: AppLanguage) -> String { language == .japanese ? "保存" : "Save" }
+    static func ok(_ language: AppLanguage) -> String { language == .japanese ? "OK" : "OK" }
     static func cancel(_ language: AppLanguage) -> String { language == .japanese ? "キャンセル" : "Cancel" }
     static func rename(_ language: AppLanguage) -> String { language == .japanese ? "変更" : "Rename" }
     static func savePresetMessage(_ language: AppLanguage) -> String { language == .japanese ? "現在のレイアウト名を入力してください。" : "Enter a name for your custom layout." }

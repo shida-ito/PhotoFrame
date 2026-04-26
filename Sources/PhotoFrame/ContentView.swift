@@ -10,11 +10,23 @@ struct ContentView: View {
         case photoList
     }
 
+    private enum PreviewMode: String, Identifiable {
+        case item
+        case slideshow
+
+        var id: String { rawValue }
+    }
+
     private struct ClearUndoSnapshot {
         let photoGroups: [PhotoGroup]
         let selectedGroupID: UUID?
         let selectedItems: Set<UUID>
         let lastSelectedID: UUID?
+    }
+
+    private struct SlideshowExportGroup {
+        let group: PhotoGroup
+        let items: [PhotoItem]
     }
 
     enum ExportScope: String, Identifiable {
@@ -34,23 +46,36 @@ struct ContentView: View {
     @State private var selectedItems: Set<UUID> = []
     @State private var lastSelectedID: UUID? = nil
     @State private var previewImage: NSImage?
+    @State private var previewSlideshowURL: URL?
     @State private var isGeneratingPreview = false
     @State private var previewScheduleTask: Task<Void, Never>? = nil
     @State private var previewTask: Task<Void, Never>? = nil
+    @State private var previewMode: PreviewMode = .item
     @State private var isApplyingGroupSettings = false
+    @State private var isApplyingGroupSlideshowSettings = false
     @State private var isRestoringWorkspace = false
     @State private var lastClearedSnapshot: ClearUndoSnapshot? = nil
     @FocusState private var focusedPane: FocusPane?
     
     @AppStorage("userPresets") private var presetsData: Data = Data()
     @AppStorage("workspaceData") private var workspaceData: Data = Data()
+    @AppStorage("workspaceBackupData") private var workspaceBackupData: Data = Data()
     @AppStorage("previewMaxDim") private var previewMaxDim: Double = 600
     @AppStorage("exportFormat") private var exportFormatRaw = ExportFormat.jpeg.rawValue
+    @AppStorage("lastStillExportFormat") private var lastStillExportFormatRaw = ExportFormat.jpeg.rawValue
     @AppStorage("exportJPEGQuality") private var exportJPEGQuality = 0.95
     @AppStorage("exportSizePreset") private var exportSizePresetRaw = ExportSizePreset.original.rawValue
     @AppStorage("exportCustomLongEdge") private var exportCustomLongEdge = 3000
     @AppStorage("exportFilenamePrefix") private var exportFilenamePrefix = "framed_"
     @AppStorage("exportCopyMetadata") private var exportCopyMetadata = true
+    @AppStorage("exportSecondsPerPhoto") private var exportSecondsPerPhoto = 2.0
+    @AppStorage("exportAudioBookmarkData") private var exportAudioBookmarkData: Data = Data()
+    @AppStorage("exportAudioDisplayName") private var exportAudioDisplayName = ""
+    @AppStorage("exportFadeInEnabled") private var exportFadeInEnabled = true
+    @AppStorage("exportFadeInDuration") private var exportFadeInDuration = 0.5
+    @AppStorage("exportFadeOutEnabled") private var exportFadeOutEnabled = true
+    @AppStorage("exportFadeOutDuration") private var exportFadeOutDuration = 1.0
+    @AppStorage("fullscreenSlideshowAutoAdvanceGroups") private var fullscreenSlideshowAutoAdvanceGroups = false
     @State private var showingPresetAlert = false
     @State private var newPresetName: String = ""
     @State private var showingRenamePresetAlert = false
@@ -64,6 +89,16 @@ struct ContentView: View {
     @State private var activeExportScope: ExportScope? = nil
     @State private var presetPreviewOriginalState: FrameSettingsState? = nil
     @State private var presetPreviewID: UUID? = nil
+    @State private var showingWorkspaceRecoveryAlert = false
+    @State private var workspaceRecoveryMessage = ""
+    @State private var workspaceAutoSavePaused = false
+    @State private var showingGroupSettingsTransferAlert = false
+    @State private var groupSettingsTransferAlertTitle = ""
+    @State private var groupSettingsTransferAlertMessage = ""
+    @State private var fullscreenSlideshowWindowController: NSWindowController?
+    @State private var fullscreenSlideshowCloseObserver: NSObjectProtocol?
+    @State private var fullscreenSlideshowCurrentGroupID: UUID?
+    @State private var fullscreenSlideshowPreparingNextGroup = false
     private let photoGroupDragPrefix = "photoframe-photo-ids:"
     private let groupRowDragPrefix = "photoframe-group-id:"
 
@@ -106,6 +141,22 @@ struct ContentView: View {
         return photoGroups[index]
     }
 
+    private var selectedGroupImageItems: [PhotoItem] {
+        selectedGroup?.photoItems.filter { $0.mediaKind == .image } ?? []
+    }
+
+    private var canPreviewSlideshow: Bool {
+        !selectedGroupImageItems.isEmpty
+    }
+
+    private var isSlideshowExportMode: Bool {
+        previewMode == .slideshow
+    }
+
+    private var currentGroupExportCount: Int {
+        selectedGroupImageItems.count
+    }
+
     private var currentPreviewItem: PhotoItem? {
         guard let selectedGroup else { return nil }
 
@@ -120,7 +171,23 @@ struct ContentView: View {
 
     private var exportFormat: ExportFormat {
         get { ExportFormat(rawValue: exportFormatRaw) ?? .jpeg }
-        nonmutating set { exportFormatRaw = newValue.rawValue }
+        nonmutating set {
+            exportFormatRaw = newValue.rawValue
+            if newValue != .slideshowVideo {
+                lastStillExportFormatRaw = newValue.rawValue
+            }
+        }
+    }
+
+    private var lastStillExportFormat: ExportFormat {
+        get {
+            let format = ExportFormat(rawValue: lastStillExportFormatRaw) ?? .jpeg
+            return format == .slideshowVideo ? .jpeg : format
+        }
+        nonmutating set {
+            guard newValue != .slideshowVideo else { return }
+            lastStillExportFormatRaw = newValue.rawValue
+        }
     }
 
     private var exportSizePreset: ExportSizePreset {
@@ -135,7 +202,26 @@ struct ContentView: View {
             sizePreset: exportSizePreset,
             customLongEdge: exportCustomLongEdge,
             filenamePrefix: exportFilenamePrefix,
-            copyMetadata: exportCopyMetadata
+            copyMetadata: exportCopyMetadata,
+            secondsPerPhoto: max(exportSecondsPerPhoto, 0.1),
+            audioBookmarkData: exportAudioBookmarkData.isEmpty ? nil : exportAudioBookmarkData,
+            audioDisplayName: exportAudioDisplayName.isEmpty ? nil : exportAudioDisplayName,
+            fadeInEnabled: exportFadeInEnabled,
+            fadeInDuration: max(exportFadeInDuration, 0),
+            fadeOutEnabled: exportFadeOutEnabled,
+            fadeOutDuration: max(exportFadeOutDuration, 0)
+        )
+    }
+
+    private var currentGroupSlideshowSettings: SlideshowSettings {
+        SlideshowSettings(
+            secondsPerPhoto: max(exportSecondsPerPhoto, 0.1),
+            audioBookmarkData: exportAudioBookmarkData.isEmpty ? nil : exportAudioBookmarkData,
+            audioDisplayName: exportAudioDisplayName.isEmpty ? nil : exportAudioDisplayName,
+            fadeInEnabled: exportFadeInEnabled,
+            fadeInDuration: max(exportFadeInDuration, 0),
+            fadeOutEnabled: exportFadeOutEnabled,
+            fadeOutDuration: max(exportFadeOutDuration, 0)
         )
     }
 
@@ -168,12 +254,40 @@ struct ContentView: View {
         }
         .onChange(of: selectedGroupID) {
             loadSelectedGroupSettings()
+            loadSelectedGroupSlideshowSettings()
         }
         .onChange(of: settings.state) {
             persistSettingsToSelectedGroup()
         }
+        .onChange(of: exportSecondsPerPhoto) {
+            persistSlideshowSettingsToSelectedGroup()
+        }
+        .onChange(of: exportAudioBookmarkData) {
+            persistSlideshowSettingsToSelectedGroup()
+        }
+        .onChange(of: exportAudioDisplayName) {
+            persistSlideshowSettingsToSelectedGroup()
+        }
+        .onChange(of: exportFadeInEnabled) {
+            persistSlideshowSettingsToSelectedGroup()
+        }
+        .onChange(of: exportFadeInDuration) {
+            persistSlideshowSettingsToSelectedGroup()
+        }
+        .onChange(of: exportFadeOutEnabled) {
+            persistSlideshowSettingsToSelectedGroup()
+        }
+        .onChange(of: exportFadeOutDuration) {
+            persistSlideshowSettingsToSelectedGroup()
+        }
         .onChange(of: settings.editorConfiguration.backgroundPreviewSignature) {
             schedulePreviewRegeneration()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .photoFrameExportAllGroupSettings)) { _ in
+            exportAllGroupSettings()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .photoFrameImportAllGroupSettings)) { _ in
+            importAllGroupSettings()
         }
         .sheet(item: $activeExportScope) { scope in
             let scopedItems = exportItems(for: scope)
@@ -187,10 +301,29 @@ struct ContentView: View {
                 customLongEdge: $exportCustomLongEdge,
                 filenamePrefix: $exportFilenamePrefix,
                 copyMetadata: $exportCopyMetadata,
+                secondsPerPhoto: $exportSecondsPerPhoto,
+                audioDisplayName: exportAudioDisplayName.isEmpty ? nil : exportAudioDisplayName,
+                fadeInEnabled: $exportFadeInEnabled,
+                fadeInDuration: $exportFadeInDuration,
+                fadeOutEnabled: $exportFadeOutEnabled,
+                fadeOutDuration: $exportFadeOutDuration,
+                isSlideshowWorkflow: isSlideshowExportMode,
                 containsImageItems: scopedItems.contains(where: { !$0.item.mediaKind.isVideo }),
                 containsVideoItems: scopedItems.contains(where: { $0.item.mediaKind.isVideo }),
+                onChooseAudio: chooseExportAudio,
+                onClearAudio: clearExportAudio,
                 onConfirm: { confirmExport(scope) }
             )
+        }
+        .alert(L10n.workspaceRecoveryTitle(language), isPresented: $showingWorkspaceRecoveryAlert) {
+            Button(L10n.ok(language)) { }
+        } message: {
+            Text(workspaceRecoveryMessage)
+        }
+        .alert(groupSettingsTransferAlertTitle, isPresented: $showingGroupSettingsTransferAlert) {
+            Button(L10n.ok(language)) { }
+        } message: {
+            Text(groupSettingsTransferAlertMessage)
         }
     }
 
@@ -269,6 +402,16 @@ struct ContentView: View {
 
     private var groupToolbar: some View {
         VStack(alignment: .leading, spacing: 8) {
+            if workspaceAutoSavePaused {
+                Text(L10n.workspaceAutoSavePaused(language))
+                    .font(.caption2)
+                    .foregroundColor(.yellow.opacity(0.9))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.yellow.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+            }
+
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 8) {
                     toolbarButton(title: L10n.addPhotos(language), systemImage: "plus.circle.fill", action: browseFiles)
@@ -379,7 +522,7 @@ struct ContentView: View {
         Button(action: { requestExport(scope: .selected) }) {
             HStack(spacing: 6) {
                 Image(systemName: "selection.pin.in.out").font(.system(size: 12))
-                Text(L10n.processSelected(selectedItems.count, language)).font(.system(size: 12, weight: .semibold))
+                Text(processSelectedTitle).font(.system(size: 12, weight: .semibold))
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 7)
@@ -388,8 +531,8 @@ struct ContentView: View {
             .clipShape(Capsule())
         }
         .buttonStyle(.plain)
-        .disabled(isProcessing || selectedItems.isEmpty)
-        .opacity(isProcessing || selectedItems.isEmpty ? 0.5 : 1.0)
+        .disabled(isProcessing || processSelectedDisabled)
+        .opacity(isProcessing || processSelectedDisabled ? 0.5 : 1.0)
     }
 
     private var processAllButton: some View {
@@ -397,7 +540,7 @@ struct ContentView: View {
             HStack(spacing: 6) {
                 if isProcessing { ProgressView().controlSize(.small).tint(.white) }
                 else { Image(systemName: "wand.and.stars").font(.system(size: 12)) }
-                Text(isProcessing ? L10n.processing(language) : L10n.processAll(language)).font(.system(size: 12, weight: .semibold))
+                Text(isProcessing ? L10n.processing(language) : processAllTitle).font(.system(size: 12, weight: .semibold))
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 7)
@@ -408,6 +551,24 @@ struct ContentView: View {
         .buttonStyle(.plain)
         .disabled(isProcessing || allPhotoItems.isEmpty)
         .opacity(isProcessing || allPhotoItems.isEmpty ? 0.7 : 1.0)
+    }
+
+    private var processSelectedTitle: String {
+        if isSlideshowExportMode {
+            return L10n.exportCurrentGroup(currentGroupExportCount, language)
+        }
+        return L10n.processSelected(selectedItems.count, language)
+    }
+
+    private var processAllTitle: String {
+        isSlideshowExportMode ? L10n.exportAllGroups(language) : L10n.processAll(language)
+    }
+
+    private var processSelectedDisabled: Bool {
+        if isSlideshowExportMode {
+            return currentGroupExportCount == 0
+        }
+        return selectedItems.isEmpty
     }
 
     private func toolbarButton(
@@ -462,6 +623,8 @@ struct ContentView: View {
 
                 Menu {
                     Button(L10n.renameGroupMenu(language)) { beginRenamingGroup(group) }
+                    Button(L10n.exportGroupSettings(language)) { exportGroupSettings(group) }
+                    Button(L10n.importGroupSettings(language)) { importGroupSettings(into: group.id) }
                     if photoGroups.count > 1 {
                         Button(L10n.deleteGroup(language), role: .destructive) { deleteGroup(group.id) }
                     }
@@ -495,6 +658,13 @@ struct ContentView: View {
                             onRemove: { removePhotoSelection(startingWith: item) },
                             dragProvider: { makeDragProvider(for: item) }
                         )
+                        .onDrop(of: [.text], isTargeted: nil) { providers in
+                            handlePhotoRowDrop(
+                                providers: providers,
+                                targetGroupID: group.id,
+                                targetItemID: item.id
+                            )
+                        }
                     }
                 }
                 .padding(.leading, 18)
@@ -510,15 +680,141 @@ struct ContentView: View {
             HStack {
                 Image(systemName: "eye.fill").font(.caption).foregroundColor(theme.accent)
                 Text(L10n.preview(language)).font(.system(size: 14, weight: .semibold, design: .rounded)).foregroundColor(.white.opacity(0.8))
+                if canPreviewSlideshow {
+                    Picker("", selection: $previewMode) {
+                        Text(L10n.previewModePhoto(language)).tag(PreviewMode.item)
+                        Text(L10n.previewModeSlideshow(language)).tag(PreviewMode.slideshow)
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 180)
+                    .onChange(of: previewMode) {
+                        if previewMode == .slideshow {
+                            selectedItems.removeAll()
+                        }
+                        schedulePreviewRegeneration(delayNanoseconds: 0)
+                    }
+                }
                 Spacer()
-                if let item = currentPreviewItem { Text(item.filename).font(.caption).foregroundColor(.white.opacity(0.4)).lineLimit(1) }
-                Button(action: { selectedItems.removeAll(); previewImage = nil }) { Image(systemName: "xmark.circle.fill").font(.system(size: 14)).foregroundColor(.white.opacity(0.3)) }.buttonStyle(.plain)
+                if previewMode == .slideshow {
+                    if let selectedGroup {
+                        Text(selectedGroup.displayName(language))
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.4))
+                            .lineLimit(1)
+                    }
+                    if previewSlideshowURL != nil {
+                        Button(action: openFullscreenSlideshowPreview) {
+                            Image(systemName: "arrow.up.left.and.arrow.down.right")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(.white.opacity(0.75))
+                        }
+                        .buttonStyle(.plain)
+                        .help(L10n.fullscreenPreview(language))
+                    }
+                } else if let item = currentPreviewItem {
+                    Text(item.filename).font(.caption).foregroundColor(.white.opacity(0.4)).lineLimit(1)
+                }
+                Button(action: clearPreviewSelection) { Image(systemName: "xmark.circle.fill").font(.system(size: 14)).foregroundColor(.white.opacity(0.3)) }.buttonStyle(.plain)
             }.padding(.horizontal, 16).padding(.vertical, 10)
             Divider().background(theme.divider)
+            if previewMode == .slideshow {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 10) {
+                        Text(L10n.slideshowSecondsPerPhoto(language))
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.65))
+                        TextField("", value: $exportSecondsPerPhoto, format: .number.precision(.fractionLength(1...2)))
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 72)
+                            .onChange(of: exportSecondsPerPhoto) {
+                                exportSecondsPerPhoto = max(exportSecondsPerPhoto, 0.1)
+                                schedulePreviewRegeneration(delayNanoseconds: 150_000_000)
+                            }
+                        Spacer()
+                        Button(L10n.chooseAudio(language), action: chooseExportAudio)
+                        if !exportAudioDisplayName.isEmpty {
+                            Button(L10n.clearAudio(language), action: clearExportAudio)
+                        }
+                    }
+
+                    HStack {
+                        Text(exportAudioDisplayName.isEmpty ? L10n.noAudioSelected(language) : exportAudioDisplayName)
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.55))
+                            .lineLimit(1)
+                        Spacer()
+                    }
+
+                    HStack(spacing: 12) {
+                        Toggle(L10n.fadeIn(language), isOn: $exportFadeInEnabled)
+                            .toggleStyle(.checkbox)
+                            .onChange(of: exportFadeInEnabled) {
+                                schedulePreviewRegeneration(delayNanoseconds: 0)
+                            }
+                        if exportFadeInEnabled {
+                            TextField("", value: $exportFadeInDuration, format: .number.precision(.fractionLength(1...2)))
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 72)
+                                .onChange(of: exportFadeInDuration) {
+                                    exportFadeInDuration = max(exportFadeInDuration, 0)
+                                    schedulePreviewRegeneration(delayNanoseconds: 150_000_000)
+                                }
+                        }
+                        Spacer()
+                    }
+
+                    HStack(spacing: 12) {
+                        Toggle(L10n.fadeOut(language), isOn: $exportFadeOutEnabled)
+                            .toggleStyle(.checkbox)
+                            .onChange(of: exportFadeOutEnabled) {
+                                schedulePreviewRegeneration(delayNanoseconds: 0)
+                            }
+                        if exportFadeOutEnabled {
+                            TextField("", value: $exportFadeOutDuration, format: .number.precision(.fractionLength(1...2)))
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 72)
+                                .onChange(of: exportFadeOutDuration) {
+                                    exportFadeOutDuration = max(exportFadeOutDuration, 0)
+                                    schedulePreviewRegeneration(delayNanoseconds: 150_000_000)
+                                }
+                        }
+                        Spacer()
+                    }
+
+                    Text(L10n.slideshowPreviewAudioUsesExport(language))
+                        .font(.caption2)
+                        .foregroundColor(.white.opacity(0.35))
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(theme.panelFill.opacity(0.45))
+                Divider().background(theme.divider)
+            }
             ZStack {
                 theme.previewSurface
-                if let preview = previewImage,
-                   let previewItem = currentPreviewItem {
+                if previewMode == .slideshow {
+                    if let previewSlideshowURL {
+                        LoopingVideoPlayerView(
+                            url: previewSlideshowURL,
+                            isMuted: fullscreenSlideshowWindowController != nil || exportAudioDisplayName.isEmpty
+                        )
+                        .padding(20)
+                    } else if !canPreviewSlideshow {
+                        Text(L10n.slideshowPreviewNeedsPhotos(language))
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.3))
+                    } else if isGeneratingPreview {
+                        VStack(spacing: 10) {
+                            ProgressView()
+                                .controlSize(.small)
+                                .tint(.white.opacity(0.8))
+                            Text(L10n.preparingSlideshowPreview(language))
+                                .font(.caption)
+                                .foregroundColor(.white.opacity(0.35))
+                        }
+                    }
+                } else if let preview = previewImage,
+                          let previewItem = currentPreviewItem {
                     Group {
                         if previewItem.mediaKind.isVideo,
                            let layout = currentPreviewLayout {
@@ -603,6 +899,8 @@ struct ContentView: View {
                             Text(L10n.previewStandard(language)).tag(600.0)
                             Text(L10n.previewHigh(language)).tag(1000.0)
                             Text(L10n.previewUltra(language)).tag(1600.0)
+                            Text(L10n.preview2K(language)).tag(2048.0)
+                            Text(L10n.preview4K(language)).tag(3840.0)
                         }.labelsHidden().frame(width: 140)
                         .onChange(of: previewMaxDim) { invalidatePreviewCache() }
                     }
@@ -674,11 +972,40 @@ struct ContentView: View {
     }
 
     private func restoreWorkspace() {
-        guard !workspaceData.isEmpty,
-              let snapshot = try? JSONDecoder().decode(PersistedWorkspace.self, from: workspaceData) else {
+        if workspaceData.isEmpty {
+            if let backupSnapshot = decodeWorkspace(from: workspaceBackupData) {
+                workspaceRecoveryMessage = L10n.workspacePrimaryRestoreFailed(language)
+                showingWorkspaceRecoveryAlert = true
+                workspaceData = workspaceBackupData
+                applyRestoredWorkspace(backupSnapshot)
+            }
             return
         }
 
+        if let snapshot = decodeWorkspace(from: workspaceData) {
+            applyRestoredWorkspace(snapshot)
+            return
+        }
+
+        if let backupSnapshot = decodeWorkspace(from: workspaceBackupData) {
+            workspaceRecoveryMessage = L10n.workspacePrimaryRestoreFailed(language)
+            showingWorkspaceRecoveryAlert = true
+            workspaceData = workspaceBackupData
+            applyRestoredWorkspace(backupSnapshot)
+            return
+        }
+
+        workspaceAutoSavePaused = true
+        workspaceRecoveryMessage = L10n.workspaceRestoreFailedNoBackup(language)
+        showingWorkspaceRecoveryAlert = true
+    }
+
+    private func decodeWorkspace(from data: Data) -> PersistedWorkspace? {
+        guard !data.isEmpty else { return nil }
+        return try? JSONDecoder().decode(PersistedWorkspace.self, from: data)
+    }
+
+    private func applyRestoredWorkspace(_ snapshot: PersistedWorkspace) {
         isRestoringWorkspace = true
 
         var restoredGroups = snapshot.groups.map { persistedGroup in
@@ -694,6 +1021,7 @@ struct ContentView: View {
                 isDefaultGroup: persistedGroup.isDefaultGroup,
                 isExpanded: persistedGroup.isExpanded,
                 settingsState: persistedGroup.settingsState,
+                slideshowSettings: persistedGroup.slideshowSettings ?? SlideshowSettings(),
                 photoItems: restoredItems
             )
         }
@@ -714,6 +1042,7 @@ struct ContentView: View {
 
         restoreInitialSelection()
         loadSelectedGroupSettings()
+        loadSelectedGroupSlideshowSettings()
 
         for group in photoGroups {
             for item in group.photoItems {
@@ -722,7 +1051,6 @@ struct ContentView: View {
         }
 
         isRestoringWorkspace = false
-        saveWorkspace()
     }
 
     private func restoreInitialSelection() {
@@ -758,7 +1086,7 @@ struct ContentView: View {
     }
 
     private func saveWorkspace() {
-        guard !isRestoringWorkspace else { return }
+        guard !isRestoringWorkspace, !workspaceAutoSavePaused else { return }
 
         let snapshot = PersistedWorkspace(
             selectedGroupID: selectedGroupID,
@@ -769,12 +1097,16 @@ struct ContentView: View {
                     isDefaultGroup: group.isDefaultGroup,
                     isExpanded: group.isExpanded,
                     settingsState: group.settingsState,
+                    slideshowSettings: group.slideshowSettings,
                     photoPaths: group.photoItems.map { $0.url.path }
                 )
             }
         )
 
         guard let encoded = try? JSONEncoder().encode(snapshot) else { return }
+        if !workspaceData.isEmpty, workspaceData != encoded {
+            workspaceBackupData = workspaceData
+        }
         workspaceData = encoded
     }
 
@@ -841,13 +1173,38 @@ struct ContentView: View {
         saveWorkspace()
     }
 
+    private func loadSelectedGroupSlideshowSettings() {
+        guard let index = resolvedSelectedGroupIndex else { return }
+        let targetSettings = photoGroups[index].slideshowSettings
+        isApplyingGroupSlideshowSettings = true
+        exportSecondsPerPhoto = max(targetSettings.secondsPerPhoto, 0.1)
+        exportAudioBookmarkData = targetSettings.audioBookmarkData ?? Data()
+        exportAudioDisplayName = targetSettings.audioDisplayName ?? ""
+        exportFadeInEnabled = targetSettings.fadeInEnabled
+        exportFadeInDuration = max(targetSettings.fadeInDuration, 0)
+        exportFadeOutEnabled = targetSettings.fadeOutEnabled
+        exportFadeOutDuration = max(targetSettings.fadeOutDuration, 0)
+        isApplyingGroupSlideshowSettings = false
+    }
+
+    private func persistSlideshowSettingsToSelectedGroup() {
+        guard !isApplyingGroupSlideshowSettings,
+              let index = resolvedSelectedGroupIndex else { return }
+
+        let currentSettings = currentGroupSlideshowSettings
+        guard photoGroups[index].slideshowSettings != currentSettings else { return }
+        photoGroups[index].slideshowSettings = currentSettings
+        saveWorkspace()
+    }
+
     private func addGroup() {
         let groupName = newGroupName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !groupName.isEmpty else { return }
 
         let group = PhotoGroup(
             name: groupName,
-            settingsState: settings.state
+            settingsState: settings.state,
+            slideshowSettings: currentGroupSlideshowSettings
         )
         photoGroups.append(group)
         selectedGroupID = group.id
@@ -951,6 +1308,35 @@ struct ContentView: View {
         schedulePreviewRegeneration(delayNanoseconds: 0)
     }
 
+    private func movePhotos(withIDs itemIDs: Set<UUID>, before targetItemID: UUID, in targetGroupID: UUID) {
+        guard let targetIndex = photoGroups.firstIndex(where: { $0.id == targetGroupID }),
+              let originalTargetPosition = photoGroups[targetIndex].photoItems.firstIndex(where: { $0.id == targetItemID }) else {
+            return
+        }
+
+        var movedItems: [PhotoItem] = []
+        for index in photoGroups.indices {
+            let extractedItems = photoGroups[index].photoItems.filter { itemIDs.contains($0.id) }
+            if !extractedItems.isEmpty {
+                movedItems.append(contentsOf: extractedItems)
+                photoGroups[index].photoItems.removeAll { itemIDs.contains($0.id) }
+            }
+        }
+
+        guard !movedItems.isEmpty else { return }
+
+        let insertionIndex = min(originalTargetPosition, photoGroups[targetIndex].photoItems.count)
+        photoGroups[targetIndex].photoItems.insert(contentsOf: movedItems, at: insertionIndex)
+        photoGroups[targetIndex].isExpanded = true
+        selectedGroupID = targetGroupID
+        selectedItems = itemIDs
+        if let firstMoved = movedItems.first {
+            lastSelectedID = firstMoved.id
+        }
+        saveWorkspace()
+        schedulePreviewRegeneration(delayNanoseconds: 0)
+    }
+
     private func reorderGroup(_ sourceGroupID: UUID, before targetGroupID: UUID) {
         guard sourceGroupID != targetGroupID,
               let sourceIndex = photoGroups.firstIndex(where: { $0.id == sourceGroupID }),
@@ -1029,6 +1415,35 @@ struct ContentView: View {
 
                 Task { @MainActor in
                     movePhotos(withIDs: ids, to: targetGroupID)
+                }
+            }
+        }
+
+        return true
+    }
+
+    private func handlePhotoRowDrop(
+        providers: [NSItemProvider],
+        targetGroupID: UUID,
+        targetItemID: UUID
+    ) -> Bool {
+        let supportedProviders = providers.filter { $0.canLoadObject(ofClass: NSString.self) }
+        guard !supportedProviders.isEmpty else { return false }
+
+        for provider in supportedProviders {
+            provider.loadObject(ofClass: NSString.self) { object, _ in
+                guard let string = object as? String,
+                      string.hasPrefix(photoGroupDragPrefix) else { return }
+
+                let idStrings = string
+                    .dropFirst(photoGroupDragPrefix.count)
+                    .split(separator: ",")
+                    .map(String.init)
+                let ids = Set(idStrings.compactMap(UUID.init(uuidString:)))
+                guard !ids.isEmpty, !ids.contains(targetItemID) else { return }
+
+                Task { @MainActor in
+                    movePhotos(withIDs: ids, before: targetItemID, in: targetGroupID)
                 }
             }
         }
@@ -1303,6 +1718,11 @@ struct ContentView: View {
 
     @MainActor
     private func regeneratePreview() {
+        if previewMode == .slideshow {
+            regenerateSlideshowPreview()
+            return
+        }
+
         guard let item = currentPreviewItem else {
             previewImage = nil
             isGeneratingPreview = false
@@ -1475,6 +1895,52 @@ struct ContentView: View {
             }
         }
     }
+
+    @MainActor
+    private func regenerateSlideshowPreview() {
+        previewTask?.cancel()
+        previewImage = nil
+        clearSlideshowPreview()
+
+        guard canPreviewSlideshow, let selectedGroup else {
+            isGeneratingPreview = false
+            return
+        }
+
+        isGeneratingPreview = true
+        let items = selectedGroup.photoItems.filter { $0.mediaKind == .image }
+        let exportSettings = currentExportSettings
+        let options = buildOptions(for: selectedGroup.settingsState.configuration).0
+        let outputURL = temporaryPreviewSlideshowURL()
+
+        previewTask = Task.detached {
+            do {
+                try await SlideshowVideoProcessor.processPreview(
+                    items: items,
+                    outputURL: outputURL,
+                    options: options,
+                    exportSettings: exportSettings,
+                    previewMaxDimension: await self.previewMaxDim
+                )
+                guard !Task.isCancelled else {
+                    try? FileManager.default.removeItem(at: outputURL)
+                    return
+                }
+                await MainActor.run {
+                    self.replaceSlideshowPreviewURL(with: outputURL)
+                    self.isGeneratingPreview = false
+                }
+            } catch {
+                try? FileManager.default.removeItem(at: outputURL)
+                await MainActor.run {
+                    if !Task.isCancelled {
+                        self.clearSlideshowPreview()
+                        self.isGeneratingPreview = false
+                    }
+                }
+            }
+        }
+    }
     
     private func invalidatePreviewCache() {
         for item in allPhotoItems {
@@ -1489,20 +1955,76 @@ struct ContentView: View {
         schedulePreviewRegeneration(delayNanoseconds: 0)
     }
 
+    @MainActor
+    private func replaceSlideshowPreviewURL(with url: URL) {
+        if previewSlideshowURL != url, let previewSlideshowURL {
+            try? FileManager.default.removeItem(at: previewSlideshowURL)
+        }
+        previewSlideshowURL = url
+        fullscreenSlideshowCurrentGroupID = selectedGroupID
+        fullscreenSlideshowPreparingNextGroup = false
+        if fullscreenSlideshowWindowController != nil {
+            openFullscreenSlideshowPreview()
+        }
+    }
+
+    @MainActor
+    private func clearSlideshowPreview() {
+        if let previewSlideshowURL {
+            try? FileManager.default.removeItem(at: previewSlideshowURL)
+        }
+        previewSlideshowURL = nil
+        if fullscreenSlideshowWindowController != nil {
+            openFullscreenSlideshowPreview()
+        }
+    }
+
+    private func temporaryPreviewSlideshowURL() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("PhotoFrame-preview-\(UUID().uuidString)")
+            .appendingPathExtension("mov")
+    }
+
     private func requestExport(scope: ExportScope) {
         guard !isProcessing else { return }
 
-        switch scope {
-        case .selected:
-            guard !selectedItems.isEmpty else { return }
-        case .all:
-            guard !allPhotoItems.isEmpty else { return }
+        if isSlideshowExportMode {
+            exportFormat = .slideshowVideo
+        } else if exportFormat == .slideshowVideo {
+            exportFormat = lastStillExportFormat
+        }
+
+        if isSlideshowExportMode {
+            switch scope {
+            case .selected:
+                guard currentGroupExportCount > 0 else { return }
+            case .all:
+                guard photoGroups.contains(where: { $0.photoItems.contains(where: { $0.mediaKind == .image }) }) else { return }
+            }
+        } else {
+            switch scope {
+            case .selected:
+                guard !selectedItems.isEmpty else { return }
+            case .all:
+                guard !allPhotoItems.isEmpty else { return }
+            }
         }
 
         activeExportScope = scope
     }
 
     private func exportItemCount(for scope: ExportScope) -> Int {
+        if isSlideshowExportMode {
+            switch scope {
+            case .selected:
+                return currentGroupExportCount
+            case .all:
+                return photoGroups.reduce(0) { partialResult, group in
+                    partialResult + group.photoItems.filter { $0.mediaKind == .image }.count
+                }
+            }
+        }
+
         switch scope {
         case .selected:
             return selectedItems.count
@@ -1514,46 +2036,97 @@ struct ContentView: View {
     private func confirmExport(_ scope: ExportScope) {
         activeExportScope = nil
 
-        let exportItems = exportItems(for: scope)
-        guard !exportItems.isEmpty else { return }
-
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canCreateDirectories = true
         panel.canChooseFiles = false
+        panel.prompt = L10n.exportAction(language)
+        panel.message = L10n.exportDestination(language)
 
         guard panel.runModal() == .OK, let outputDirectory = panel.url else { return }
 
         let exportSettings = currentExportSettings
+        let exportItems = exportItems(for: scope)
+        let slideshowGroups = exportSettings.format == .slideshowVideo
+            ? slideshowGroups(for: scope)
+            : []
+        if exportSettings.format == .slideshowVideo {
+            guard !slideshowGroups.isEmpty else { return }
+        } else {
+            guard !exportItems.isEmpty else { return }
+        }
         isProcessing = true
 
         Task.detached {
-            for exportItem in exportItems {
-                let item = exportItem.item
-                await MainActor.run { item.status = .processing }
-                let outputURL = await MainActor.run {
-                    self.outputURL(for: item, in: outputDirectory, exportSettings: exportSettings)
-                }
-                do {
-                    let options = await MainActor.run { self.buildOptions(for: exportItem.state.configuration).0 }
-                    if item.mediaKind.isVideo {
-                        try await VideoProcessor.process(
-                            inputURL: item.url,
-                            outputURL: outputURL,
-                            options: options,
-                            exportSettings: exportSettings
-                        )
-                    } else {
-                        try ImageProcessor.process(
-                            inputURL: item.url,
-                            outputURL: outputURL,
-                            options: options,
+            if exportSettings.format == .slideshowVideo {
+                for slideshowGroup in slideshowGroups {
+                    let items = slideshowGroup.items
+                    await MainActor.run {
+                        for item in items {
+                            item.status = .processing
+                        }
+                    }
+
+                    let outputURL = await MainActor.run {
+                        self.outputURL(
+                            forGroup: slideshowGroup.group,
+                            in: outputDirectory,
                             exportSettings: exportSettings
                         )
                     }
-                    await MainActor.run { item.status = .completed; item.resultURL = outputURL }
+
+                    do {
+                        let options = await MainActor.run {
+                            self.buildOptions(for: slideshowGroup.group.settingsState.configuration).0
+                        }
+                        try await SlideshowVideoProcessor.process(
+                            items: items,
+                            outputURL: outputURL,
+                            options: options,
+                            exportSettings: exportSettings
+                        )
+                        await MainActor.run {
+                            for item in items {
+                                item.status = .completed
+                                item.resultURL = outputURL
+                            }
+                        }
+                    } catch {
+                        await MainActor.run {
+                            for item in items {
+                                item.status = .failed(error.localizedDescription)
+                            }
+                        }
+                    }
                 }
-                catch { await MainActor.run { item.status = .failed(error.localizedDescription) } }
+            } else {
+                for exportItem in exportItems {
+                    let item = exportItem.item
+                    await MainActor.run { item.status = .processing }
+                    let outputURL = await MainActor.run {
+                        self.outputURL(for: item, in: outputDirectory, exportSettings: exportSettings)
+                    }
+                    do {
+                        let options = await MainActor.run { self.buildOptions(for: exportItem.state.configuration).0 }
+                        if item.mediaKind.isVideo {
+                            try await VideoProcessor.process(
+                                inputURL: item.url,
+                                outputURL: outputURL,
+                                options: options,
+                                exportSettings: exportSettings
+                            )
+                        } else {
+                            try ImageProcessor.process(
+                                inputURL: item.url,
+                                outputURL: outputURL,
+                                options: options,
+                                exportSettings: exportSettings
+                            )
+                        }
+                        await MainActor.run { item.status = .completed; item.resultURL = outputURL }
+                    }
+                    catch { await MainActor.run { item.status = .failed(error.localizedDescription) } }
+                }
             }
             await MainActor.run { isProcessing = false }
         }
@@ -1582,9 +2155,357 @@ struct ContentView: View {
         return directory.appendingPathComponent(fileName)
     }
 
+    private func outputURL(forGroup group: PhotoGroup, in directory: URL, exportSettings: ExportSettings) -> URL {
+        let rawName = group.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let baseName = rawName.isEmpty ? "ungrouped" : rawName
+        let prefix = sanitizedFilenamePrefix(exportSettings.filenamePrefix)
+        let sanitizedBaseName = sanitizedFilenamePrefix(baseName)
+        let fileName = "\(prefix)\(sanitizedBaseName).\(exportSettings.format.fileExtension)"
+        return directory.appendingPathComponent(fileName)
+    }
+
     private func sanitizedFilenamePrefix(_ prefix: String) -> String {
         let invalidCharacters = CharacterSet(charactersIn: "/:\\?%*|\"<>")
         return prefix.components(separatedBy: invalidCharacters).joined(separator: "-")
+    }
+
+    private func slideshowGroups(for scope: ExportScope) -> [SlideshowExportGroup] {
+        if isSlideshowExportMode {
+            switch scope {
+            case .selected:
+                guard let selectedGroup else { return [] }
+                let images = selectedGroup.photoItems.filter { $0.mediaKind == .image }
+                guard !images.isEmpty else { return [] }
+                return [SlideshowExportGroup(group: selectedGroup, items: images)]
+            case .all:
+                return photoGroups.compactMap { group in
+                    let images = group.photoItems.filter { $0.mediaKind == .image }
+                    guard !images.isEmpty else { return nil }
+                    return SlideshowExportGroup(group: group, items: images)
+                }
+            }
+        }
+
+        return photoGroups.compactMap { group -> SlideshowExportGroup? in
+            let images: [PhotoItem]
+            switch scope {
+            case .selected:
+                images = group.photoItems.filter {
+                    $0.mediaKind == .image && selectedItems.contains($0.id)
+                }
+            case .all:
+                images = group.photoItems.filter { $0.mediaKind == .image }
+            }
+
+            guard !images.isEmpty else { return nil }
+            return SlideshowExportGroup(group: group, items: images)
+        }
+    }
+
+    private func chooseExportAudio() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.audio]
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        do {
+            let bookmarkData = try url.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
+            exportAudioBookmarkData = bookmarkData
+            exportAudioDisplayName = url.lastPathComponent
+            if previewMode == .slideshow {
+                schedulePreviewRegeneration(delayNanoseconds: 0)
+            }
+        } catch {
+            exportAudioBookmarkData = Data()
+            exportAudioDisplayName = ""
+        }
+    }
+
+    private func clearExportAudio() {
+        exportAudioBookmarkData = Data()
+        exportAudioDisplayName = ""
+        if previewMode == .slideshow {
+            schedulePreviewRegeneration(delayNanoseconds: 0)
+        }
+    }
+
+    private func exportGroupSettings(_ group: PhotoGroup) {
+        let transfer = GroupSettingsTransfer(
+            name: group.name,
+            settingsState: group.settingsState,
+            slideshowSettings: group.slideshowSettings
+        )
+
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.canCreateDirectories = true
+        let suggestedName = PresetCodec.sanitizedFileNameComponent(from: group.displayName(language))
+        panel.nameFieldStringValue = "\(suggestedName)-GroupSettings.json"
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        do {
+            let exportData = try PresetCodec.encodeGroupSettingsTransfer(transfer)
+            try exportData.write(to: url, options: .atomic)
+        } catch {
+            presentGroupSettingsTransferError(
+                title: L10n.groupSettingsExportFailed(language),
+                message: error.localizedDescription
+            )
+        }
+    }
+
+    private func exportAllGroupSettings() {
+        let transfer = GroupSettingsCollectionTransfer(
+            groups: photoGroups.map { group in
+                GroupSettingsTransfer(
+                    name: group.name,
+                    settingsState: group.settingsState,
+                    slideshowSettings: group.slideshowSettings
+                )
+            }
+        )
+
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = "PhotoFrame-GroupSettings.json"
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        do {
+            let exportData = try PresetCodec.encodeGroupSettingsCollectionTransfer(transfer)
+            try exportData.write(to: url, options: .atomic)
+        } catch {
+            presentGroupSettingsTransferError(
+                title: L10n.groupSettingsExportFailed(language),
+                message: error.localizedDescription
+            )
+        }
+    }
+
+    private func importGroupSettings(into groupID: UUID) {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        do {
+            let data = try Data(contentsOf: url)
+            let transfer = try PresetCodec.decodeGroupSettingsTransfer(from: data)
+            applyGroupSettingsTransfer(transfer, to: groupID)
+        } catch {
+            presentGroupSettingsTransferError(
+                title: L10n.groupSettingsImportFailed(language),
+                message: groupSettingsTransferErrorMessage(for: error)
+            )
+        }
+    }
+
+    private func importAllGroupSettings() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        do {
+            let data = try Data(contentsOf: url)
+            let transfer = try PresetCodec.decodeGroupSettingsCollectionTransfer(from: data)
+            applyAllGroupSettingsTransfer(transfer)
+        } catch {
+            presentGroupSettingsTransferError(
+                title: L10n.groupSettingsImportFailed(language),
+                message: groupSettingsTransferErrorMessage(for: error)
+            )
+        }
+    }
+
+    private func applyGroupSettingsTransfer(_ transfer: GroupSettingsTransfer, to groupID: UUID) {
+        guard let index = photoGroups.firstIndex(where: { $0.id == groupID }) else { return }
+        photoGroups[index].settingsState = transfer.settingsState
+        photoGroups[index].slideshowSettings = transfer.slideshowSettings
+
+        if selectedGroupID == groupID {
+            loadSelectedGroupSettings()
+            loadSelectedGroupSlideshowSettings()
+            schedulePreviewRegeneration(delayNanoseconds: 0)
+        }
+
+        saveWorkspace()
+    }
+
+    private func applyAllGroupSettingsTransfer(_ transfer: GroupSettingsCollectionTransfer) {
+        guard !transfer.groups.isEmpty else { return }
+
+        for groupTransfer in transfer.groups {
+            let normalizedName = normalizedGroupName(groupTransfer.name)
+            if let index = photoGroups.firstIndex(where: { normalizedGroupName($0.name) == normalizedName }) {
+                photoGroups[index].settingsState = groupTransfer.settingsState
+                photoGroups[index].slideshowSettings = groupTransfer.slideshowSettings
+            } else {
+                photoGroups.append(
+                    PhotoGroup(
+                        name: groupTransfer.name,
+                        isDefaultGroup: false,
+                        isExpanded: true,
+                        settingsState: groupTransfer.settingsState,
+                        slideshowSettings: groupTransfer.slideshowSettings,
+                        photoItems: []
+                    )
+                )
+            }
+        }
+
+        loadSelectedGroupSettings()
+        loadSelectedGroupSlideshowSettings()
+        schedulePreviewRegeneration(delayNanoseconds: 0)
+        saveWorkspace()
+    }
+
+    private func normalizedGroupName(_ name: String) -> String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    private func presentGroupSettingsTransferError(title: String, message: String) {
+        groupSettingsTransferAlertTitle = title
+        groupSettingsTransferAlertMessage = message
+        showingGroupSettingsTransferAlert = true
+    }
+
+    private func groupSettingsTransferErrorMessage(for error: Error) -> String {
+        if case PresetCodecError.invalidPresetFile = error {
+            return L10n.invalidGroupSettingsFile(language)
+        }
+        return error.localizedDescription
+    }
+
+    private func clearPreviewSelection() {
+        selectedItems.removeAll()
+        previewImage = nil
+        if previewMode == .slideshow {
+            clearSlideshowPreview()
+        }
+    }
+
+    private func openFullscreenSlideshowPreview() {
+        let onPlaybackEnded: (() -> Void)? = fullscreenSlideshowAutoAdvanceGroups
+            ? { handleFullscreenSlideshowPlaybackEnded() }
+            : nil
+        let onClose: () -> Void = { closeFullscreenSlideshowPreview() }
+
+        let contentView: FullscreenSlideshowPreview = FullscreenSlideshowPreview(
+            videoURL: previewSlideshowURL,
+            isMuted: exportAudioDisplayName.isEmpty,
+            loops: !fullscreenSlideshowAutoAdvanceGroups,
+            language: language,
+            isPreparingNextGroup: fullscreenSlideshowPreparingNextGroup,
+            onPlaybackEnded: onPlaybackEnded,
+            onClose: onClose
+        )
+        let hostingController = NSHostingController(rootView: contentView)
+
+        let window: NSWindow
+        let controller: NSWindowController
+        if let existingController = fullscreenSlideshowWindowController,
+           let existingWindow = existingController.window {
+            existingWindow.contentViewController = hostingController
+            window = existingWindow
+            controller = existingController
+        } else {
+            window = NSWindow(
+                contentRect: NSScreen.main?.frame ?? .init(x: 0, y: 0, width: 1280, height: 720),
+                styleMask: [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView],
+                backing: .buffered,
+                defer: false
+            )
+            window.titleVisibility = .hidden
+            window.titlebarAppearsTransparent = true
+            window.isMovableByWindowBackground = true
+            window.collectionBehavior = [.fullScreenPrimary, .fullScreenAllowsTiling]
+            window.contentViewController = hostingController
+            controller = NSWindowController(window: window)
+            fullscreenSlideshowWindowController = controller
+            fullscreenSlideshowCloseObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.willCloseNotification,
+                object: window,
+                queue: .main
+            ) { _ in
+                Task { @MainActor in
+                    fullscreenSlideshowWindowController = nil
+                    fullscreenSlideshowCurrentGroupID = nil
+                    fullscreenSlideshowPreparingNextGroup = false
+                    if let observer = fullscreenSlideshowCloseObserver {
+                        NotificationCenter.default.removeObserver(observer)
+                        fullscreenSlideshowCloseObserver = nil
+                    }
+                }
+            }
+        }
+
+        fullscreenSlideshowCurrentGroupID = selectedGroupID
+        controller.showWindow(nil)
+        window.makeKeyAndOrderFront(nil)
+        if !window.styleMask.contains(.fullScreen) {
+            window.toggleFullScreen(nil)
+        }
+    }
+
+    private func closeFullscreenSlideshowPreview() {
+        guard let window = fullscreenSlideshowWindowController?.window else { return }
+        if window.styleMask.contains(.fullScreen) {
+            window.toggleFullScreen(nil)
+        }
+        window.close()
+        fullscreenSlideshowWindowController = nil
+        fullscreenSlideshowCurrentGroupID = nil
+        fullscreenSlideshowPreparingNextGroup = false
+        if let observer = fullscreenSlideshowCloseObserver {
+            NotificationCenter.default.removeObserver(observer)
+            fullscreenSlideshowCloseObserver = nil
+        }
+    }
+
+    private func handleFullscreenSlideshowPlaybackEnded() {
+        guard fullscreenSlideshowAutoAdvanceGroups else { return }
+        advanceFullscreenSlideshowToNextGroup()
+    }
+
+    @MainActor
+    private func advanceFullscreenSlideshowToNextGroup() {
+        guard let currentGroupID = fullscreenSlideshowCurrentGroupID,
+              let currentIndex = photoGroups.firstIndex(where: { $0.id == currentGroupID }),
+              let nextIndex = nextSlideshowGroupIndex(after: currentIndex) else {
+            return
+        }
+
+        fullscreenSlideshowPreparingNextGroup = true
+        previewMode = .slideshow
+        selectedGroupID = photoGroups[nextIndex].id
+        selectedItems.removeAll()
+        lastSelectedID = nil
+        previewImage = nil
+        saveWorkspace()
+        schedulePreviewRegeneration(delayNanoseconds: 0)
+    }
+
+    private func nextSlideshowGroupIndex(after currentIndex: Int) -> Int? {
+        guard !photoGroups.isEmpty else { return nil }
+
+        for offset in 1...photoGroups.count {
+            let candidateIndex = (currentIndex + offset) % photoGroups.count
+            if photoGroups[candidateIndex].photoItems.contains(where: { $0.mediaKind == .image }) {
+                return candidateIndex
+            }
+        }
+
+        return nil
     }
 
     private func previewPreset(_ preset: Preset?) {

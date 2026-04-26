@@ -84,6 +84,11 @@ enum FontSelectionDisplayMode: String, CaseIterable, Identifiable, Sendable, Cod
 enum ExportFormat: String, CaseIterable, Identifiable, Sendable, Codable {
     case jpeg
     case png
+    case slideshowVideo
+
+    static var imageFormats: [ExportFormat] {
+        [.jpeg, .png]
+    }
 
     var id: String { rawValue }
 
@@ -91,6 +96,7 @@ enum ExportFormat: String, CaseIterable, Identifiable, Sendable, Codable {
         switch self {
         case .jpeg: return "jpg"
         case .png: return "png"
+        case .slideshowVideo: return "mov"
         }
     }
 
@@ -98,6 +104,7 @@ enum ExportFormat: String, CaseIterable, Identifiable, Sendable, Codable {
         switch self {
         case .jpeg: return "JPEG"
         case .png: return "PNG"
+        case .slideshowVideo: return "MOV"
         }
     }
 }
@@ -131,6 +138,13 @@ struct ExportSettings: Equatable, Sendable, Codable {
     var customLongEdge: Int = 3000
     var filenamePrefix: String = "framed_"
     var copyMetadata: Bool = true
+    var secondsPerPhoto: Double = 2.0
+    var audioBookmarkData: Data? = nil
+    var audioDisplayName: String? = nil
+    var fadeInEnabled = true
+    var fadeInDuration: Double = 0.5
+    var fadeOutEnabled = true
+    var fadeOutDuration: Double = 1.0
 
     var maxLongEdge: Int? {
         switch sizePreset {
@@ -144,6 +158,16 @@ struct ExportSettings: Equatable, Sendable, Codable {
             return max(customLongEdge, 1)
         }
     }
+}
+
+struct SlideshowSettings: Equatable, Sendable, Codable {
+    var secondsPerPhoto: Double = 2.0
+    var audioBookmarkData: Data? = nil
+    var audioDisplayName: String? = nil
+    var fadeInEnabled = true
+    var fadeInDuration: Double = 0.5
+    var fadeOutEnabled = true
+    var fadeOutDuration: Double = 1.0
 }
 
 struct BackgroundOptions: Equatable, Sendable {
@@ -288,6 +312,7 @@ struct PhotoGroup: Identifiable {
     var isDefaultGroup = false
     var isExpanded = true
     var settingsState = FrameSettingsState()
+    var slideshowSettings = SlideshowSettings()
     var photoItems: [PhotoItem] = []
 
     static func ungrouped() -> PhotoGroup {
@@ -692,6 +717,7 @@ struct PersistedPhotoGroup: Identifiable, Codable, Sendable {
     var isDefaultGroup: Bool
     var isExpanded: Bool
     var settingsState: FrameSettingsState
+    var slideshowSettings: SlideshowSettings?
     var photoPaths: [String]
 }
 
