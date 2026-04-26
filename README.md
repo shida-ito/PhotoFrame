@@ -20,8 +20,8 @@ Stylish and minimal photo framing application for macOS. Add elegant borders and
     - You can also enter any tag name found in the current photo as `{TagName}`.
     - Control font, color, size, X/Y position, alignment, and visibility per layer.
 - **Photo Groups**: Organize photos into groups in the left panel, drag to reorder them, and apply one shared layout setting set per group.
-- **Per-Group Slideshow Settings**: Each group can keep its own slideshow timing, audio file, and fade-in / fade-out settings.
-- **Slideshow Preview & Export**: Switch the preview between single-photo mode and slideshow mode, add audio, preview fade timing, and export the selected group as a MOV slideshow.
+- **Per-Group Slideshow Settings**: Each group can keep its own slideshow timing, video-duration mode, added audio, original-video audio mix, and fade-in / fade-out settings.
+- **Slideshow Preview & Export**: Switch the preview between single-photo mode and slideshow mode, adjust timing and audio mix inline, preview fade timing, and export the selected group as a MOV slideshow.
 - **Fullscreen Slideshow**: Play the slideshow preview in fullscreen, with optional automatic advance to the next group.
 - **Group Settings Transfer**: Export or import settings for a single group, or transfer all group settings at once from the File menu.
 - **Workspace Restore**: Reopen the latest group structure, settings, and photo assignments the next time you launch the app.
@@ -76,7 +76,7 @@ Once complete, you will find `PhotoFrame.app` in the project root.
 
 ### 3. Configuring Frame & Text
 - **Group Settings**: The settings panel always edits the currently selected group. Use separate groups when you want different layouts for different subsets of photos.
-- **Slideshow Settings**: In slideshow preview mode, set seconds per photo, choose an audio file, and adjust fade-in / fade-out per group.
+- **Slideshow Settings**: In slideshow preview mode, use the compact settings row to choose video duration behavior, set seconds per item, pick or remove added audio, adjust added-audio volume, optionally mix original video audio with its own volume slider, and tune fade-in / fade-out per group.
 - **Aspect Ratio**: Select a grid option for the outer frame. If using "Custom", enter the ratio values (e.g., `4:5`).
 - **Photo Position**: Use the Vertical and Horizontal sliders in the "Photo Position" section to offset the image within its designated area.
 - **Frame Width**: Adjust the amount of space around the image. Set it to `0` for a borderless edge.

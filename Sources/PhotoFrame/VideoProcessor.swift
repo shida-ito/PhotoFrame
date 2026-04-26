@@ -1,5 +1,5 @@
 import AppKit
-import AVFoundation
+@preconcurrency import AVFoundation
 import CoreImage
 import CoreGraphics
 
@@ -294,14 +294,16 @@ struct VideoProcessor {
     static func makePreviewVideoComposition(
         for url: URL,
         options: ImageProcessor.Options
-    ) -> AVVideoComposition? {
+    ) async -> AVVideoComposition? {
         guard options.lutConfiguration != nil else { return nil }
 
         let asset = AVURLAsset(url: url)
-        guard let track = asset.tracks(withMediaType: .video).first else { return nil }
-
-        let naturalSize = track.naturalSize
-        let preferredTransform = track.preferredTransform
+        guard let track = try? await asset.loadTracks(withMediaType: .video).first,
+              let naturalSize = try? await track.load(.naturalSize),
+              let preferredTransform = try? await track.load(.preferredTransform),
+              let nominalFrameRate = try? await track.load(.nominalFrameRate) else {
+            return nil
+        }
         let orientedSize = orientedVideoSize(
             naturalSize: naturalSize,
             preferredTransform: preferredTransform
@@ -317,7 +319,7 @@ struct VideoProcessor {
             asset: asset,
             naturalSize: naturalSize,
             preferredTransform: preferredTransform,
-            frameDuration: frameDuration(for: track.nominalFrameRate),
+            frameDuration: frameDuration(for: nominalFrameRate),
             renderSize: renderSize,
             targetRect: targetRect,
             overlayImage: nil,

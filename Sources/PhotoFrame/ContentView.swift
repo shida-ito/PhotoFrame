@@ -274,62 +274,72 @@ struct ContentView: View {
 
     @ViewBuilder
     private var slideshowPreviewSettingsPanel: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             if slideshowPreviewContainsVideo {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(L10n.slideshowVideoDurationMode(language))
-                        .font(.caption)
-                        .foregroundColor(.white.opacity(0.65))
-                    Picker("", selection: Binding(
-                        get: { exportVideoDurationMode },
-                        set: {
-                            exportVideoDurationMode = $0
-                            schedulePreviewRegeneration(delayNanoseconds: 0)
+                    HStack(alignment: .center, spacing: 10) {
+                        Text(L10n.slideshowVideoDurationMode(language))
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.65))
+                        Picker("", selection: Binding(
+                            get: { exportVideoDurationMode },
+                            set: {
+                                exportVideoDurationMode = $0
+                                schedulePreviewRegeneration(delayNanoseconds: 0)
+                            }
+                        )) {
+                            ForEach(SlideshowVideoDurationMode.allCases) { mode in
+                                Text(mode.title(language)).tag(mode)
+                            }
                         }
-                    )) {
-                        ForEach(SlideshowVideoDurationMode.allCases) { mode in
-                            Text(mode.title(language)).tag(mode)
-                        }
+                        .pickerStyle(.segmented)
+                        Text(slideshowPreviewContainsVideo ? L10n.slideshowSecondsPerItem(language) : L10n.slideshowSecondsPerPhoto(language))
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.65))
+                        TextField("", value: $exportSecondsPerPhoto, format: .number.precision(.fractionLength(1...2)))
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 68)
+                            .onChange(of: exportSecondsPerPhoto) {
+                                exportSecondsPerPhoto = max(exportSecondsPerPhoto, 0.1)
+                                schedulePreviewRegeneration(delayNanoseconds: 150_000_000)
+                            }
                     }
-                    .pickerStyle(.segmented)
                     Text(L10n.slideshowVideoDurationHint(language))
                         .font(.caption2)
                         .foregroundColor(.white.opacity(0.35))
                 }
-            }
-
-            HStack(spacing: 10) {
-                Text(slideshowPreviewContainsVideo ? L10n.slideshowSecondsPerItem(language) : L10n.slideshowSecondsPerPhoto(language))
-                    .font(.caption)
-                    .foregroundColor(.white.opacity(0.65))
-                TextField("", value: $exportSecondsPerPhoto, format: .number.precision(.fractionLength(1...2)))
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 72)
-                    .onChange(of: exportSecondsPerPhoto) {
-                        exportSecondsPerPhoto = max(exportSecondsPerPhoto, 0.1)
-                        schedulePreviewRegeneration(delayNanoseconds: 150_000_000)
-                    }
-                Spacer()
-                Button(L10n.chooseAudio(language), action: chooseExportAudio)
-                if !exportAudioDisplayName.isEmpty {
-                    Button(L10n.clearAudio(language), action: clearExportAudio)
+            } else {
+                HStack(alignment: .center, spacing: 10) {
+                    Text(L10n.slideshowSecondsPerPhoto(language))
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.65))
+                    TextField("", value: $exportSecondsPerPhoto, format: .number.precision(.fractionLength(1...2)))
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 68)
+                        .onChange(of: exportSecondsPerPhoto) {
+                            exportSecondsPerPhoto = max(exportSecondsPerPhoto, 0.1)
+                            schedulePreviewRegeneration(delayNanoseconds: 150_000_000)
+                        }
                 }
             }
 
-            HStack {
+            HStack(alignment: .center, spacing: 10) {
+                Button(L10n.chooseAudio(language), action: chooseExportAudio)
+                    .controlSize(.small)
+                Button(L10n.clearAudio(language), action: clearExportAudio)
+                    .controlSize(.small)
+                    .opacity(exportAudioDisplayName.isEmpty ? 0 : 1)
+                    .disabled(exportAudioDisplayName.isEmpty)
                 Text(exportAudioDisplayName.isEmpty ? L10n.noAudioSelected(language) : exportAudioDisplayName)
                     .font(.caption)
                     .foregroundColor(.white.opacity(0.55))
                     .lineLimit(1)
-                Spacer()
-            }
-
-            if !exportAudioDisplayName.isEmpty {
                 HStack(spacing: 10) {
                     Text(L10n.backgroundAudioVolume(language))
                         .font(.caption)
                         .foregroundColor(.white.opacity(0.65))
                     Slider(value: $exportBackgroundAudioVolume, in: 0...1, step: 0.05)
+                        .frame(width: 150)
                         .onChange(of: exportBackgroundAudioVolume) {
                             schedulePreviewRegeneration(delayNanoseconds: 0)
                         }
@@ -338,21 +348,24 @@ struct ContentView: View {
                         .foregroundColor(.white.opacity(0.55))
                         .frame(width: 42, alignment: .trailing)
                 }
+                .opacity(exportAudioDisplayName.isEmpty ? 0 : 1)
+                .allowsHitTesting(!exportAudioDisplayName.isEmpty)
+                Spacer(minLength: 0)
             }
 
             if slideshowPreviewContainsVideo {
-                Toggle(L10n.useOriginalVideoAudio(language), isOn: $exportIncludeOriginalVideoAudio)
-                    .toggleStyle(.checkbox)
-                    .onChange(of: exportIncludeOriginalVideoAudio) {
-                        schedulePreviewRegeneration(delayNanoseconds: 0)
-                    }
-
-                if exportIncludeOriginalVideoAudio {
-                    HStack(spacing: 10) {
+                HStack(alignment: .center, spacing: 10) {
+                    Toggle(L10n.useOriginalVideoAudio(language), isOn: $exportIncludeOriginalVideoAudio)
+                        .toggleStyle(.checkbox)
+                        .onChange(of: exportIncludeOriginalVideoAudio) {
+                            schedulePreviewRegeneration(delayNanoseconds: 0)
+                        }
+                    if exportIncludeOriginalVideoAudio {
                         Text(L10n.originalVideoAudioVolume(language))
                             .font(.caption)
                             .foregroundColor(.white.opacity(0.65))
                         Slider(value: $exportOriginalVideoAudioVolume, in: 0...1, step: 0.05)
+                            .frame(maxWidth: 170)
                             .onChange(of: exportOriginalVideoAudioVolume) {
                                 schedulePreviewRegeneration(delayNanoseconds: 0)
                             }
@@ -361,41 +374,42 @@ struct ContentView: View {
                             .foregroundColor(.white.opacity(0.55))
                             .frame(width: 42, alignment: .trailing)
                     }
+                    Spacer(minLength: 0)
                 }
             }
 
-            HStack(spacing: 12) {
-                Toggle(L10n.fadeIn(language), isOn: $exportFadeInEnabled)
-                    .toggleStyle(.checkbox)
-                    .onChange(of: exportFadeInEnabled) {
-                        schedulePreviewRegeneration(delayNanoseconds: 0)
-                    }
-                if exportFadeInEnabled {
-                    TextField("", value: $exportFadeInDuration, format: .number.precision(.fractionLength(1...2)))
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 72)
-                        .onChange(of: exportFadeInDuration) {
-                            exportFadeInDuration = max(exportFadeInDuration, 0)
-                            schedulePreviewRegeneration(delayNanoseconds: 150_000_000)
+            HStack(spacing: 16) {
+                HStack(spacing: 8) {
+                    Toggle(L10n.fadeIn(language), isOn: $exportFadeInEnabled)
+                        .toggleStyle(.checkbox)
+                        .onChange(of: exportFadeInEnabled) {
+                            schedulePreviewRegeneration(delayNanoseconds: 0)
                         }
+                    if exportFadeInEnabled {
+                        TextField("", value: $exportFadeInDuration, format: .number.precision(.fractionLength(1...2)))
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 64)
+                            .onChange(of: exportFadeInDuration) {
+                                exportFadeInDuration = max(exportFadeInDuration, 0)
+                                schedulePreviewRegeneration(delayNanoseconds: 150_000_000)
+                            }
+                    }
                 }
-                Spacer()
-            }
-
-            HStack(spacing: 12) {
-                Toggle(L10n.fadeOut(language), isOn: $exportFadeOutEnabled)
-                    .toggleStyle(.checkbox)
-                    .onChange(of: exportFadeOutEnabled) {
-                        schedulePreviewRegeneration(delayNanoseconds: 0)
-                    }
-                if exportFadeOutEnabled {
-                    TextField("", value: $exportFadeOutDuration, format: .number.precision(.fractionLength(1...2)))
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 72)
-                        .onChange(of: exportFadeOutDuration) {
-                            exportFadeOutDuration = max(exportFadeOutDuration, 0)
-                            schedulePreviewRegeneration(delayNanoseconds: 150_000_000)
+                HStack(spacing: 8) {
+                    Toggle(L10n.fadeOut(language), isOn: $exportFadeOutEnabled)
+                        .toggleStyle(.checkbox)
+                        .onChange(of: exportFadeOutEnabled) {
+                            schedulePreviewRegeneration(delayNanoseconds: 0)
                         }
+                    if exportFadeOutEnabled {
+                        TextField("", value: $exportFadeOutDuration, format: .number.precision(.fractionLength(1...2)))
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 64)
+                            .onChange(of: exportFadeOutDuration) {
+                                exportFadeOutDuration = max(exportFadeOutDuration, 0)
+                                schedulePreviewRegeneration(delayNanoseconds: 150_000_000)
+                            }
+                    }
                 }
                 Spacer()
             }
@@ -404,9 +418,27 @@ struct ContentView: View {
                 .font(.caption2)
                 .foregroundColor(.white.opacity(0.35))
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
         .background(theme.panelFill.opacity(0.45))
+    }
+
+    @MainActor
+    private func applyPreviewVideoComposition(
+        for url: URL,
+        item: PhotoItem,
+        options: ImageProcessor.Options
+    ) async {
+        let composition = await VideoProcessor.makePreviewVideoComposition(
+            for: url,
+            options: options
+        )
+        guard !Task.isCancelled else { return }
+        previewVideoComposition = composition
+        previewVideoCompositionSignature = previewVideoSignature(
+            for: item,
+            configuration: settings.editorConfiguration
+        )
     }
 
     private func exportSheetItems(for scope: ExportScope) -> [PhotoItem] {
@@ -1952,11 +1984,9 @@ struct ContentView: View {
         if let bg = item.cachedBackground,
            item.cachedBackgroundOptions == bgOptions {
             if item.mediaKind.isVideo {
-                previewVideoComposition = VideoProcessor.makePreviewVideoComposition(
-                    for: item.url,
-                    options: options
-                )
-                previewVideoCompositionSignature = previewVideoSignature(for: item, configuration: settings.editorConfiguration)
+                previewTask = Task {
+                    await applyPreviewVideoComposition(for: item.url, item: item, options: options)
+                }
             } else {
                 previewVideoComposition = nil
                 previewVideoCompositionSignature = ""
@@ -1987,15 +2017,16 @@ struct ContentView: View {
 
                     do {
                         let bg = try ImageProcessor.renderFrameBackground(layout: layout, options: options)
+                        let composition = await VideoProcessor.makePreviewVideoComposition(
+                            for: inputURL,
+                            options: options
+                        )
                         let ns = NSImage(cgImage: bg, size: NSSize(width: bg.width, height: bg.height))
                         guard !Task.isCancelled else { return }
                         await MainActor.run {
                             item.cachedBackground = bg
                             item.cachedBackgroundOptions = bgOptions
-                            self.previewVideoComposition = VideoProcessor.makePreviewVideoComposition(
-                                for: inputURL,
-                                options: options
-                            )
+                            self.previewVideoComposition = composition
                             self.previewVideoCompositionSignature = self.previewVideoSignature(
                                 for: item,
                                 configuration: self.settings.editorConfiguration
@@ -2046,15 +2077,16 @@ struct ContentView: View {
 
                 do {
                     let bg = try ImageProcessor.renderFrameBackground(layout: layout, options: options)
+                    let composition = await VideoProcessor.makePreviewVideoComposition(
+                        for: inputURL,
+                        options: options
+                    )
                     let ns = NSImage(cgImage: bg, size: NSSize(width: bg.width, height: bg.height))
                     guard !Task.isCancelled else { return }
                     await MainActor.run {
                         item.cachedBackground = bg
                         item.cachedBackgroundOptions = bgOptions
-                        self.previewVideoComposition = VideoProcessor.makePreviewVideoComposition(
-                            for: inputURL,
-                            options: options
-                        )
+                        self.previewVideoComposition = composition
                         self.previewVideoCompositionSignature = self.previewVideoSignature(
                             for: item,
                             configuration: self.settings.editorConfiguration

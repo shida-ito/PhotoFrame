@@ -3,6 +3,32 @@ import CoreGraphics
 import ImageIO
 
 struct SlideshowVideoProcessor {
+    private final class ReaderWriterBox: @unchecked Sendable {
+        let output: AVAssetReaderOutput
+        let input: AVAssetWriterInput
+        let reader: AVAssetReader
+        let writer: AVAssetWriter
+
+        init(
+            output: AVAssetReaderOutput,
+            input: AVAssetWriterInput,
+            reader: AVAssetReader,
+            writer: AVAssetWriter
+        ) {
+            self.output = output
+            self.input = input
+            self.reader = reader
+            self.writer = writer
+        }
+    }
+
+    private final class WriterBox: @unchecked Sendable {
+        let writer: AVAssetWriter
+
+        init(_ writer: AVAssetWriter) {
+            self.writer = writer
+        }
+    }
 
     private struct RenderedFrame {
         let image: CGImage
@@ -1012,24 +1038,25 @@ struct SlideshowVideoProcessor {
     ) {
         let queue = DispatchQueue(label: "PhotoFrame.sample-append.\(UUID().uuidString)")
         let completionGuard = CompletionGuard(completion: completion)
+        let box = ReaderWriterBox(output: output, input: input, reader: reader, writer: writer)
 
         input.requestMediaDataWhenReady(on: queue) {
-            while input.isReadyForMoreMediaData {
-                if let sampleBuffer = output.copyNextSampleBuffer() {
-                    if !input.append(sampleBuffer) {
-                        input.markAsFinished()
-                        completionGuard.finish(.failure(writer.error ?? SlideshowVideoProcessingError.cannotWriteVideo))
+            while box.input.isReadyForMoreMediaData {
+                if let sampleBuffer = box.output.copyNextSampleBuffer() {
+                    if !box.input.append(sampleBuffer) {
+                        box.input.markAsFinished()
+                        completionGuard.finish(.failure(box.writer.error ?? SlideshowVideoProcessingError.cannotWriteVideo))
                         return
                     }
                     continue
                 }
 
-                input.markAsFinished()
+                box.input.markAsFinished()
 
-                if reader.status == .failed {
-                    completionGuard.finish(.failure(reader.error ?? SlideshowVideoProcessingError.cannotWriteVideo))
-                } else if writer.status == .failed {
-                    completionGuard.finish(.failure(writer.error ?? SlideshowVideoProcessingError.cannotWriteVideo))
+                if box.reader.status == .failed {
+                    completionGuard.finish(.failure(box.reader.error ?? SlideshowVideoProcessingError.cannotWriteVideo))
+                } else if box.writer.status == .failed {
+                    completionGuard.finish(.failure(box.writer.error ?? SlideshowVideoProcessingError.cannotWriteVideo))
                 } else {
                     completionGuard.finish(.success(()))
                 }
@@ -1245,9 +1272,10 @@ struct SlideshowVideoProcessor {
     }
 
     private static func finishWriting(_ writer: AVAssetWriter) async throws {
+        let box = WriterBox(writer)
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             writer.finishWriting {
-                if let error = writer.error {
+                if let error = box.writer.error {
                     continuation.resume(throwing: error)
                 } else {
                     continuation.resume()
