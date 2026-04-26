@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import CoreImage
 import CoreGraphics
 
 struct VideoProcessor {
@@ -134,31 +135,21 @@ struct VideoProcessor {
             ? ((try? await asset.load(.commonMetadata)) ?? [])
             : []
 
-        let instruction = AVMutableVideoCompositionInstruction()
-        instruction.timeRange = CMTimeRange(start: .zero, duration: duration)
-
-        let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: compositionVideoTrack)
         let videoRect = videoFrameRect(
             imageRect: layout.imageRect,
             renderSize: CGSize(width: layout.canvasWidth, height: layout.canvasHeight)
         )
-        let transform = videoTransform(
-            preferredTransform: preferredTransform,
-            naturalSize: naturalSize,
-            targetRect: videoRect
-        )
-        layerInstruction.setTransform(transform, at: .zero)
-        instruction.layerInstructions = [layerInstruction]
-
-        let videoComposition = AVMutableVideoComposition()
-        videoComposition.instructions = [instruction]
-        videoComposition.renderSize = CGSize(
+        let renderSize = CGSize(
             width: layout.canvasWidth,
             height: layout.canvasHeight
         )
-        videoComposition.frameDuration = frameDuration(for: nominalFrameRate)
-        videoComposition.animationTool = try animationTool(
-            renderSize: videoComposition.renderSize,
+        let videoComposition = try makeExportVideoComposition(
+            asset: composition,
+            naturalSize: naturalSize,
+            preferredTransform: preferredTransform,
+            nominalFrameRate: nominalFrameRate,
+            renderSize: renderSize,
+            targetRect: videoRect,
             layout: layout,
             options: options,
             exifInfo: exifInfo
@@ -181,6 +172,40 @@ struct VideoProcessor {
         }
 
         try await exportSession.export(to: outputURL, as: .mov)
+    }
+
+    static func makePreviewVideoComposition(
+        for url: URL,
+        options: ImageProcessor.Options
+    ) -> AVVideoComposition? {
+        guard options.lutConfiguration != nil else { return nil }
+
+        let asset = AVURLAsset(url: url)
+        guard let track = asset.tracks(withMediaType: .video).first else { return nil }
+
+        let naturalSize = track.naturalSize
+        let preferredTransform = track.preferredTransform
+        let orientedSize = orientedVideoSize(
+            naturalSize: naturalSize,
+            preferredTransform: preferredTransform
+        )
+
+        let renderSize = CGSize(
+            width: max(orientedSize.width.rounded(), 1),
+            height: max(orientedSize.height.rounded(), 1)
+        )
+        let targetRect = CGRect(origin: .zero, size: renderSize)
+
+        return makeVideoComposition(
+            asset: asset,
+            naturalSize: naturalSize,
+            preferredTransform: preferredTransform,
+            frameDuration: frameDuration(for: track.nominalFrameRate),
+            renderSize: renderSize,
+            targetRect: targetRect,
+            overlayImage: nil,
+            options: options
+        )
     }
 
     private static func orientedVideoSize(
@@ -211,48 +236,101 @@ struct VideoProcessor {
         return CMTime(value: 1, timescale: Int32(max(nominalFrameRate.rounded(), 1)))
     }
 
-    private static func animationTool(
+    private static func makeExportVideoComposition(
+        asset: AVAsset,
+        naturalSize: CGSize,
+        preferredTransform: CGAffineTransform,
+        nominalFrameRate: Float,
         renderSize: CGSize,
+        targetRect: CGRect,
         layout: ImageProcessor.Layout,
         options: ImageProcessor.Options,
         exifInfo: ExifInfo
-    ) throws -> AVVideoCompositionCoreAnimationTool {
-        let parentLayer = CALayer()
-        parentLayer.frame = CGRect(origin: .zero, size: renderSize)
-        parentLayer.masksToBounds = true
-
-        let videoLayer = CALayer()
-        videoLayer.frame = parentLayer.frame
-        parentLayer.addSublayer(videoLayer)
-
-        let overlayLayer = CALayer()
-        overlayLayer.frame = parentLayer.bounds
-        overlayLayer.contents = try ImageProcessor.renderVideoOverlay(
+    ) throws -> AVVideoComposition {
+        let overlayImage = try ImageProcessor.renderVideoOverlay(
             exifInfo: exifInfo,
             layout: layout,
             options: options
         )
-        overlayLayer.contentsGravity = .resize
-        parentLayer.addSublayer(overlayLayer)
 
-        return AVVideoCompositionCoreAnimationTool(
-            postProcessingAsVideoLayer: videoLayer,
-            in: parentLayer
+        return makeVideoComposition(
+            asset: asset,
+            naturalSize: naturalSize,
+            preferredTransform: preferredTransform,
+            frameDuration: frameDuration(for: nominalFrameRate),
+            renderSize: renderSize,
+            targetRect: targetRect,
+            overlayImage: overlayImage,
+            options: options
         )
     }
 
-    private static func videoTransform(
-        preferredTransform: CGAffineTransform,
+    private static func makeVideoComposition(
+        asset: AVAsset,
         naturalSize: CGSize,
-        targetRect: CGRect
+        preferredTransform: CGAffineTransform,
+        frameDuration: CMTime,
+        renderSize: CGSize,
+        targetRect: CGRect,
+        overlayImage: CGImage?,
+        options: ImageProcessor.Options
+    ) -> AVVideoComposition {
+        let normalizedTransform = normalizedVideoTransform(
+            preferredTransform: preferredTransform,
+            naturalSize: naturalSize
+        )
+        let placementTransform = videoTransform(
+            normalizedTransform: normalizedTransform,
+            naturalSize: naturalSize,
+            targetRect: targetRect
+        )
+        let overlayCIImage = overlayImage.map { CIImage(cgImage: $0) }
+        let bounds = CGRect(origin: .zero, size: renderSize)
+
+        let videoComposition = AVMutableVideoComposition(asset: asset) { request in
+            let transformedVideo = request.sourceImage.transformed(by: placementTransform)
+            let filteredVideo: CIImage
+
+            do {
+                filteredVideo = try ImageProcessor.applyLUT(to: transformedVideo, options: options)
+            } catch {
+                request.finish(with: error)
+                return
+            }
+
+            let transparentCanvas = CIImage(color: .clear).cropped(to: bounds)
+            var composedImage = filteredVideo.composited(over: transparentCanvas)
+
+            if let overlayCIImage {
+                composedImage = overlayCIImage.composited(over: composedImage)
+            }
+
+            request.finish(with: composedImage.cropped(to: bounds), context: nil)
+        }
+
+        videoComposition.renderSize = renderSize
+        videoComposition.frameDuration = frameDuration
+        return videoComposition
+    }
+
+    private static func normalizedVideoTransform(
+        preferredTransform: CGAffineTransform,
+        naturalSize: CGSize
     ) -> CGAffineTransform {
         let sourceRect = CGRect(origin: .zero, size: naturalSize)
             .applying(preferredTransform)
             .standardized
-        let normalizedTransform = preferredTransform.concatenating(
+
+        return preferredTransform.concatenating(
             CGAffineTransform(translationX: -sourceRect.minX, y: -sourceRect.minY)
         )
+    }
 
+    private static func videoTransform(
+        normalizedTransform: CGAffineTransform,
+        naturalSize: CGSize,
+        targetRect: CGRect
+    ) -> CGAffineTransform {
         let normalizedRect = CGRect(origin: .zero, size: naturalSize)
             .applying(normalizedTransform)
             .standardized

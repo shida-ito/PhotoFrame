@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -46,6 +47,8 @@ struct ContentView: View {
     @State private var selectedItems: Set<UUID> = []
     @State private var lastSelectedID: UUID? = nil
     @State private var previewImage: NSImage?
+    @State private var previewVideoComposition: AVVideoComposition?
+    @State private var previewVideoCompositionSignature = ""
     @State private var previewSlideshowURL: URL?
     @State private var isGeneratingPreview = false
     @State private var previewScheduleTask: Task<Void, Never>? = nil
@@ -71,6 +74,7 @@ struct ContentView: View {
     @AppStorage("exportSecondsPerPhoto") private var exportSecondsPerPhoto = 2.0
     @AppStorage("exportAudioBookmarkData") private var exportAudioBookmarkData: Data = Data()
     @AppStorage("exportAudioDisplayName") private var exportAudioDisplayName = ""
+    @AppStorage("defaultAudioDirectoryPath") private var defaultAudioDirectoryPath = ""
     @AppStorage("exportFadeInEnabled") private var exportFadeInEnabled = true
     @AppStorage("exportFadeInDuration") private var exportFadeInDuration = 0.5
     @AppStorage("exportFadeOutEnabled") private var exportFadeOutEnabled = true
@@ -92,6 +96,7 @@ struct ContentView: View {
     @State private var showingWorkspaceRecoveryAlert = false
     @State private var workspaceRecoveryMessage = ""
     @State private var workspaceAutoSavePaused = false
+    @State private var showingResetWorkspaceAlert = false
     @State private var showingGroupSettingsTransferAlert = false
     @State private var groupSettingsTransferAlertTitle = ""
     @State private var groupSettingsTransferAlertMessage = ""
@@ -325,6 +330,14 @@ struct ContentView: View {
         } message: {
             Text(groupSettingsTransferAlertMessage)
         }
+        .alert(L10n.resetWorkspaceTitle(language), isPresented: $showingResetWorkspaceAlert) {
+            Button(L10n.resetWorkspace(language), role: .destructive) {
+                resetWorkspaceAndResumeAutoSave()
+            }
+            Button(L10n.cancel(language), role: .cancel) { }
+        } message: {
+            Text(L10n.resetWorkspaceMessage(language))
+        }
     }
 
     private var backgroundGradient: some View {
@@ -403,13 +416,33 @@ struct ContentView: View {
     private var groupToolbar: some View {
         VStack(alignment: .leading, spacing: 8) {
             if workspaceAutoSavePaused {
-                Text(L10n.workspaceAutoSavePaused(language))
-                    .font(.caption2)
-                    .foregroundColor(.yellow.opacity(0.9))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.yellow.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(L10n.workspaceAutoSavePaused(language))
+                        .font(.caption2)
+                        .foregroundColor(.yellow.opacity(0.9))
+
+                    HStack(spacing: 8) {
+                        Button(L10n.resumeAutoSave(language), action: resumeWorkspaceAutoSave)
+                            .buttonStyle(.plain)
+                            .foregroundColor(.white.opacity(0.85))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(theme.elevatedFill, in: Capsule())
+
+                        Button(L10n.resetWorkspace(language)) {
+                            showingResetWorkspaceAlert = true
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(.white.opacity(0.85))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color.red.opacity(0.18), in: Capsule())
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.yellow.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
             }
 
             ViewThatFits(in: .horizontal) {
@@ -821,6 +854,8 @@ struct ContentView: View {
                             LiveVideoPreviewCanvas(
                                 backgroundImage: preview,
                                 videoURL: previewItem.url,
+                                videoComposition: previewVideoComposition,
+                                compositionSignature: previewVideoCompositionSignature,
                                 imageRect: layout.imageRect,
                                 textLayers: currentPreviewTextLayers
                             )
@@ -875,6 +910,7 @@ struct ContentView: View {
                 AspectRatioSettings(configuration: settings.editorConfigurationBinding, language: language)
                 AlignmentSettings(configuration: settings.editorConfigurationBinding, language: language)
                 FrameColorSettings(configuration: settings.editorConfigurationBinding, language: language)
+                LUTSettingsSection(configuration: settings.editorConfigurationBinding, language: language)
                 TextLayersSettings(
                     configuration: settings.editorConfigurationBinding,
                     language: language,
@@ -998,6 +1034,42 @@ struct ContentView: View {
         workspaceAutoSavePaused = true
         workspaceRecoveryMessage = L10n.workspaceRestoreFailedNoBackup(language)
         showingWorkspaceRecoveryAlert = true
+    }
+
+    private func resumeWorkspaceAutoSave() {
+        workspaceAutoSavePaused = false
+        workspaceRecoveryMessage = L10n.workspaceAutoSaveResumed(language)
+        showingWorkspaceRecoveryAlert = true
+        saveWorkspace()
+    }
+
+    @MainActor
+    private func resetWorkspaceAndResumeAutoSave() {
+        previewTask?.cancel()
+        previewScheduleTask?.cancel()
+        clearSlideshowPreview()
+        previewImage = nil
+        previewVideoComposition = nil
+        previewVideoCompositionSignature = ""
+        photoGroups = [.ungrouped()]
+        selectedGroupID = photoGroups.first?.id
+        selectedItems.removeAll()
+        lastSelectedID = nil
+        lastClearedSnapshot = nil
+        settings.apply(state: FrameSettingsState())
+        exportAudioBookmarkData = Data()
+        exportAudioDisplayName = ""
+        exportSecondsPerPhoto = 2.0
+        exportFadeInEnabled = true
+        exportFadeInDuration = 0.5
+        exportFadeOutEnabled = true
+        exportFadeOutDuration = 1.0
+        workspaceData = Data()
+        workspaceBackupData = Data()
+        workspaceAutoSavePaused = false
+        loadSelectedGroupSettings()
+        loadSelectedGroupSlideshowSettings()
+        saveWorkspace()
     }
 
     private func decodeWorkspace(from data: Data) -> PersistedWorkspace? {
@@ -1734,6 +1806,16 @@ struct ContentView: View {
         let (options, bgOptions) = buildOptions(for: settings.editorConfiguration)
         if let bg = item.cachedBackground,
            item.cachedBackgroundOptions == bgOptions {
+            if item.mediaKind.isVideo {
+                previewVideoComposition = VideoProcessor.makePreviewVideoComposition(
+                    for: item.url,
+                    options: options
+                )
+                previewVideoCompositionSignature = previewVideoSignature(for: item, configuration: settings.editorConfiguration)
+            } else {
+                previewVideoComposition = nil
+                previewVideoCompositionSignature = ""
+            }
             previewImage = NSImage(
                 cgImage: bg,
                 size: NSSize(width: bg.width, height: bg.height)
@@ -1745,6 +1827,7 @@ struct ContentView: View {
         isGeneratingPreview = true
 
         if item.mediaKind.isVideo {
+            let inputURL = item.url
             if let size = item.cachedOrientedSize {
                 let capturedSize = size
 
@@ -1764,6 +1847,14 @@ struct ContentView: View {
                         await MainActor.run {
                             item.cachedBackground = bg
                             item.cachedBackgroundOptions = bgOptions
+                            self.previewVideoComposition = VideoProcessor.makePreviewVideoComposition(
+                                for: inputURL,
+                                options: options
+                            )
+                            self.previewVideoCompositionSignature = self.previewVideoSignature(
+                                for: item,
+                                configuration: self.settings.editorConfiguration
+                            )
                             self.previewImage = ns
                             self.isGeneratingPreview = false
                         }
@@ -1778,7 +1869,6 @@ struct ContentView: View {
                 return
             }
 
-            let inputURL = item.url
             previewTask = Task.detached {
                 guard !Task.isCancelled else { return }
 
@@ -1816,6 +1906,14 @@ struct ContentView: View {
                     await MainActor.run {
                         item.cachedBackground = bg
                         item.cachedBackgroundOptions = bgOptions
+                        self.previewVideoComposition = VideoProcessor.makePreviewVideoComposition(
+                            for: inputURL,
+                            options: options
+                        )
+                        self.previewVideoCompositionSignature = self.previewVideoSignature(
+                            for: item,
+                            configuration: self.settings.editorConfiguration
+                        )
                         self.previewImage = ns
                         self.isGeneratingPreview = false
                     }
@@ -1829,6 +1927,8 @@ struct ContentView: View {
             }
             return
         }
+        previewVideoComposition = nil
+        previewVideoCompositionSignature = ""
         
         // Fast path: use cached downscaled image (no disk I/O)
         if let cg = item.cachedPreviewImage,
@@ -1952,6 +2052,8 @@ struct ContentView: View {
             item.cachedBackground = nil
             item.cachedBackgroundOptions = nil
         }
+        previewVideoComposition = nil
+        previewVideoCompositionSignature = ""
         schedulePreviewRegeneration(delayNanoseconds: 0)
     }
 
@@ -2208,6 +2310,12 @@ struct ContentView: View {
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
         panel.allowedContentTypes = [.audio]
+        if !defaultAudioDirectoryPath.isEmpty {
+            let url = URL(fileURLWithPath: defaultAudioDirectoryPath)
+            if FileManager.default.fileExists(atPath: url.path) {
+                panel.directoryURL = url
+            }
+        }
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
@@ -2565,7 +2673,8 @@ struct ContentView: View {
             photoVOffset: configuration.photoVOffset,
             photoHOffset: configuration.photoHOffset,
             effectiveRatio: configuration.effectiveRatio,
-            previewMaxDim: previewMaxDim
+            previewMaxDim: previewMaxDim,
+            lutConfiguration: configuration.lutConfiguration
         )
         
         let processedLayers = configuration.textLayers.map { layer in
@@ -2593,6 +2702,9 @@ struct ContentView: View {
             photoVOffset: configuration.photoVOffset,
             photoHOffset: configuration.photoHOffset,
             innerPadding: configuration.innerPadding,
+            lutConfiguration: configuration.lutConfiguration.isEnabled && configuration.lutConfiguration.hasFileSelection
+                ? configuration.lutConfiguration
+                : nil,
             textLayers: processedLayers
         )
         
@@ -2629,5 +2741,10 @@ struct ContentView: View {
             layout: layout,
             options: options
         )
+    }
+
+    private func previewVideoSignature(for item: PhotoItem, configuration: FrameConfiguration) -> String {
+        let lut = configuration.lutConfiguration
+        return "\(item.id.uuidString)|\(lut.isEnabled)|\(lut.filePath)|\(lut.intensity)"
     }
 }

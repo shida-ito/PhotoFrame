@@ -180,6 +180,7 @@ struct BackgroundOptions: Equatable, Sendable {
     let photoHOffset: Double
     let effectiveRatio: CGFloat?
     let previewMaxDim: Double
+    let lutConfiguration: LUTConfiguration
     
     static func == (lhs: BackgroundOptions, rhs: BackgroundOptions) -> Bool {
         lhs.frameColor.r == rhs.frameColor.r &&
@@ -196,7 +197,8 @@ struct BackgroundOptions: Equatable, Sendable {
         lhs.photoVOffset == rhs.photoVOffset &&
         lhs.photoHOffset == rhs.photoHOffset &&
         lhs.effectiveRatio == rhs.effectiveRatio &&
-        lhs.previewMaxDim == rhs.previewMaxDim
+        lhs.previewMaxDim == rhs.previewMaxDim &&
+        lhs.lutConfiguration == rhs.lutConfiguration
     }
 }
 
@@ -355,6 +357,22 @@ struct CodableColor: Codable, Equatable, Sendable {
     }
 }
 
+struct LUTConfiguration: Equatable, Codable, Sendable {
+    var isEnabled = false
+    var filePath: String = ""
+    var displayName: String = ""
+    var intensity: Double = 1.0
+
+    var hasFileSelection: Bool {
+        !filePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var resolvedURL: URL? {
+        guard hasFileSelection else { return nil }
+        return URL(fileURLWithPath: filePath)
+    }
+}
+
 struct FrameConfiguration: Equatable, Codable, Sendable {
     var aspectRatio: AspectRatio = .square
     var customWidth: String = "4"
@@ -367,6 +385,7 @@ struct FrameConfiguration: Equatable, Codable, Sendable {
     var photoVOffset: Double = 0.5
     var photoHOffset: Double = 0.5
     var innerPadding: CGFloat = 0.3
+    var lutConfiguration = LUTConfiguration()
     var textLayers: [TextLayer] = [.defaultExif]
 
     enum CodingKeys: String, CodingKey {
@@ -381,6 +400,7 @@ struct FrameConfiguration: Equatable, Codable, Sendable {
         case photoVOffset
         case photoHOffset
         case innerPadding
+        case lutConfiguration
         case textLayers
     }
 
@@ -396,6 +416,7 @@ struct FrameConfiguration: Equatable, Codable, Sendable {
         photoVOffset: Double = 0.5,
         photoHOffset: Double = 0.5,
         innerPadding: CGFloat = 0.3,
+        lutConfiguration: LUTConfiguration = LUTConfiguration(),
         textLayers: [TextLayer] = [.defaultExif]
     ) {
         self.aspectRatio = aspectRatio
@@ -409,6 +430,7 @@ struct FrameConfiguration: Equatable, Codable, Sendable {
         self.photoVOffset = photoVOffset
         self.photoHOffset = photoHOffset
         self.innerPadding = innerPadding
+        self.lutConfiguration = lutConfiguration
         self.textLayers = textLayers
     }
 
@@ -425,6 +447,7 @@ struct FrameConfiguration: Equatable, Codable, Sendable {
         photoVOffset = try container.decodeIfPresent(Double.self, forKey: .photoVOffset) ?? 0.5
         photoHOffset = try container.decodeIfPresent(Double.self, forKey: .photoHOffset) ?? 0.5
         innerPadding = try container.decodeIfPresent(CGFloat.self, forKey: .innerPadding) ?? 0.3
+        lutConfiguration = try container.decodeIfPresent(LUTConfiguration.self, forKey: .lutConfiguration) ?? LUTConfiguration()
         textLayers = try container.decodeIfPresent([TextLayer].self, forKey: .textLayers) ?? [.defaultExif]
     }
 
@@ -441,6 +464,7 @@ struct FrameConfiguration: Equatable, Codable, Sendable {
         try container.encode(photoVOffset, forKey: .photoVOffset)
         try container.encode(photoHOffset, forKey: .photoHOffset)
         try container.encode(innerPadding, forKey: .innerPadding)
+        try container.encode(lutConfiguration, forKey: .lutConfiguration)
         try container.encode(textLayers, forKey: .textLayers)
     }
 
@@ -466,7 +490,8 @@ struct FrameConfiguration: Equatable, Codable, Sendable {
             paddingRatio: paddingRatio,
             photoVOffset: photoVOffset,
             photoHOffset: photoHOffset,
-            innerPadding: innerPadding
+            innerPadding: innerPadding,
+            lutConfiguration: lutConfiguration
         )
     }
 
@@ -701,6 +726,7 @@ struct PreviewBackgroundSignature: Equatable {
     let photoVOffset: Double
     let photoHOffset: Double
     let innerPadding: CGFloat
+    let lutConfiguration: LUTConfiguration
 }
 
 struct FrameSettingsState: Equatable, Codable, Sendable {

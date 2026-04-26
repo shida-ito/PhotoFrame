@@ -212,6 +212,113 @@ struct FrameColorSettings: View {
     }
 }
 
+struct LUTSettingsSection: View {
+    @AppStorage("uiTheme") private var uiThemeRaw = UITheme.midnight.rawValue
+    @AppStorage("defaultLUTDirectoryPath") private var defaultLUTDirectoryPath = ""
+    @Binding var configuration: FrameConfiguration
+    let language: AppLanguage
+
+    private var theme: UIThemeAppearance {
+        resolvedThemeAppearance(uiThemeRaw)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Image(systemName: "camera.filters")
+                    .font(.caption)
+                    .foregroundColor(theme.accent)
+                Text(L10n.lut(language))
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(.white.opacity(0.5))
+                    .textCase(.uppercase)
+            }
+
+            Toggle(L10n.enableLUT(language), isOn: $configuration.lutConfiguration.isEnabled)
+                .toggleStyle(.switch)
+                .disabled(!configuration.lutConfiguration.hasFileSelection)
+
+            HStack(spacing: 8) {
+                Button(action: chooseLUT) {
+                    Text(L10n.chooseLUT(language))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.plain)
+                .padding(.vertical, 8)
+                .background(theme.selectionFill)
+                .foregroundColor(theme.accent)
+                .cornerRadius(8)
+
+                Button(action: clearLUT) {
+                    Text(L10n.clearLUT(language))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.plain)
+                .padding(.vertical, 8)
+                .background(Color.white.opacity(0.06))
+                .foregroundColor(.white.opacity(configuration.lutConfiguration.hasFileSelection ? 0.85 : 0.35))
+                .cornerRadius(8)
+                .disabled(!configuration.lutConfiguration.hasFileSelection)
+            }
+
+            Text(configuration.lutConfiguration.hasFileSelection ? configuration.lutConfiguration.displayName : L10n.noLUTSelected(language))
+                .font(.caption2)
+                .foregroundColor(.white.opacity(0.55))
+                .lineLimit(2)
+
+            if configuration.lutConfiguration.hasFileSelection {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text(L10n.lutIntensity(language))
+                            .font(.caption2)
+                            .foregroundColor(.white.opacity(0.4))
+                        Spacer()
+                        Text("\(Int((configuration.lutConfiguration.intensity * 100).rounded()))%")
+                            .font(.caption2.monospacedDigit())
+                            .foregroundColor(.white.opacity(0.55))
+                    }
+
+                    HStack {
+                        Slider(value: $configuration.lutConfiguration.intensity, in: 0...1, step: 0.01)
+                            .tint(theme.accent)
+                        NumericField(value: $configuration.lutConfiguration.intensity)
+                            .frame(width: 50)
+                            .font(.caption2)
+                    }
+                }
+            }
+
+            Text(L10n.lutSupportedFormat(language))
+                .font(.caption2)
+                .foregroundColor(.white.opacity(0.35))
+        }
+    }
+
+    private func chooseLUT() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.init(filenameExtension: "cube")].compactMap { $0 }
+        if !defaultLUTDirectoryPath.isEmpty {
+            let url = URL(fileURLWithPath: defaultLUTDirectoryPath)
+            if FileManager.default.fileExists(atPath: url.path) {
+                panel.directoryURL = url
+            }
+        }
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        configuration.lutConfiguration.filePath = url.path
+        configuration.lutConfiguration.displayName = url.lastPathComponent
+        configuration.lutConfiguration.isEnabled = true
+    }
+
+    private func clearLUT() {
+        configuration.lutConfiguration = LUTConfiguration()
+    }
+}
+
 struct TextLayersSettings: View {
     @AppStorage("uiTheme") private var uiThemeRaw = UITheme.midnight.rawValue
     @Binding var configuration: FrameConfiguration

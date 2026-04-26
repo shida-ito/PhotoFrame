@@ -13,6 +13,7 @@ Stylish and minimal photo framing application for macOS. Add elegant borders and
     - Use precision sliders to position the photo both **vertically and horizontally** inside the frame.
     - Adjust frame width from `0` upward for anything from borderless layouts to wide margins.
 - **Photo Border**: Add an optional extra border that follows the exact photo ratio, with configurable color and width.
+- **LUT Support**: Assign a `.cube` LUT per group setting, adjust LUT intensity, and apply it to both still images and videos.
 - **Text Layers**:
     - Add multiple text layers.
     - Use EXIF tags such as `{Camera}`, `{Lens}`, `{Focal}`, `{FStop}`, `{Shutter}`, `{ISO}`, `{Date}`, `{Year}`, `{Month}`, and `{Day}` inside each template.
@@ -24,6 +25,7 @@ Stylish and minimal photo framing application for macOS. Add elegant borders and
 - **Fullscreen Slideshow**: Play the slideshow preview in fullscreen, with optional automatic advance to the next group.
 - **Group Settings Transfer**: Export or import settings for a single group, or transfer all group settings at once from the File menu.
 - **Workspace Restore**: Reopen the latest group structure, settings, and photo assignments the next time you launch the app.
+- **Workspace Protection Controls**: If workspace recovery fails, pause auto-save to prevent overwriting, then resume saving or reset the workspace from the warning banner.
 - **Fast Interactive Preview**: Cached previews and live text overlays keep text editing and positioning responsive.
 - **Video Preview & Export**: Preview MOV/MP4 clips inside the frame layout, then export them with the frame and text burned into every frame as MOV.
 - **Preset Management**: Presets are shown in A-Z order, support hover preview before click-to-apply, and can be saved, overwritten, renamed, deleted, imported, exported, and cleared.
@@ -79,6 +81,8 @@ Once complete, you will find `PhotoFrame.app` in the project root.
 - **Photo Position**: Use the Vertical and Horizontal sliders in the "Photo Position" section to offset the image within its designated area.
 - **Frame Width**: Adjust the amount of space around the image. Set it to `0` for a borderless edge.
 - **Photo Border**: In the "Frame Style" section, enable `Show Photo Border` to add a second border around the photo itself. The border always follows the photo's own ratio, and you can change both color and width.
+- **LUT**: In the `LUT` section, choose a `.cube` file to enable color grading for the current group's photos and videos. The same LUT is reflected in preview and export.
+- **LUT Intensity**: Adjust the LUT amount with a slider from `0%` to `100%` to blend between the original image and the graded result.
 - **Text Layers**:
     - Add one or more layers in the "Text Layers" section.
     - Enter a template such as `{Camera} • {Lens}`.
@@ -100,6 +104,7 @@ Once complete, you will find `PhotoFrame.app` in the project root.
     - switch the display language between English and Japanese
     - choose the UI color mode: `Midnight`, `Graphite`, `Black`, `Paper`, or `Forest`
     - choose the font picker mode: `Search` or `Full List`
+    - set default folders for audio files and LUT files so file pickers open where you expect
     - choose whether fullscreen slideshow playback advances automatically to the next group
 
 ### 5. Export

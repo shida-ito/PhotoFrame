@@ -1,4 +1,5 @@
 import AppKit
+import CoreImage
 import CoreGraphics
 import ImageIO
 import UniformTypeIdentifiers
@@ -32,6 +33,7 @@ struct ImageProcessor {
         let photoVOffset: Double
         let photoHOffset: Double
         let innerPadding: CGFloat
+        let lutConfiguration: LUTConfiguration?
         
         let textLayers: [TextLayerOptions]
     }
@@ -137,6 +139,8 @@ struct ImageProcessor {
             return entry
         }
     }
+
+    private static let ciContext = CIContext()
 
     /// Process a single image file and write the result to `outputURL`.
     static func process(
@@ -509,10 +513,19 @@ struct ImageProcessor {
         context.setFillColor(red: fc.r, green: fc.g, blue: fc.b, alpha: fc.a)
         context.fill(CGRect(x: 0, y: 0, width: layout.canvasWidth, height: layout.canvasHeight))
 
-        context.saveGState()
-        applyOrientationTransform(context: context, orientation: orientation, drawRect: layout.imageRect)
-        context.draw(cgImage, in: layout.imageRect)
-        context.restoreGState()
+        if options.lutConfiguration != nil {
+            let filteredImage = try makeFilteredImage(
+                cgImage: cgImage,
+                orientation: orientation,
+                options: options
+            )
+            context.draw(filteredImage, in: layout.imageRect)
+        } else {
+            context.saveGState()
+            applyOrientationTransform(context: context, orientation: orientation, drawRect: layout.imageRect)
+            context.draw(cgImage, in: layout.imageRect)
+            context.restoreGState()
+        }
 
         if options.photoBorderEnabled {
             strokePhotoBorder(
@@ -730,6 +743,62 @@ struct ImageProcessor {
                 size: resolved.cachedLayout.size
             )
         }
+    }
+
+    static func applyLUT(to image: CIImage, options: Options) throws -> CIImage {
+        guard let configuration = options.lutConfiguration,
+              let lutCube = try LUTProcessor.cube(for: configuration) else {
+            return image
+        }
+        let intensity = min(max(configuration.intensity, 0), 1)
+        guard intensity > 0 else { return image }
+
+        let filterName = CIFilter(name: "CIColorCubeWithColorSpace") != nil
+            ? "CIColorCubeWithColorSpace"
+            : "CIColorCube"
+        guard let filter = CIFilter(name: filterName) else {
+            return image
+        }
+
+        filter.setValue(image, forKey: kCIInputImageKey)
+        filter.setValue(lutCube.dimension, forKey: "inputCubeDimension")
+        filter.setValue(lutCube.cubeData, forKey: "inputCubeData")
+        if filterName == "CIColorCubeWithColorSpace" {
+            filter.setValue(CGColorSpaceCreateDeviceRGB(), forKey: "inputColorSpace")
+        }
+
+        guard let filteredImage = filter.outputImage else {
+            return image
+        }
+
+        guard intensity < 1 else {
+            return filteredImage
+        }
+
+        let alphaAdjusted = filteredImage.applyingFilter(
+            "CIColorMatrix",
+            parameters: [
+                "inputAVector": CIVector(x: 0, y: 0, z: 0, w: intensity)
+            ]
+        )
+
+        return alphaAdjusted.composited(over: image)
+    }
+
+    private static func makeFilteredImage(
+        cgImage: CGImage,
+        orientation: CGImagePropertyOrientation,
+        options: Options
+    ) throws -> CGImage {
+        let baseImage = CIImage(cgImage: cgImage).oriented(orientation)
+        let filteredImage = try applyLUT(to: baseImage, options: options)
+        let extent = filteredImage.extent.integral
+
+        guard let outputImage = ciContext.createCGImage(filteredImage, from: extent) else {
+            throw ProcessingError.cannotRenderImage
+        }
+
+        return outputImage
     }
 
     static func applyOrientationTransform(context: CGContext, orientation: CGImagePropertyOrientation, drawRect: CGRect) {

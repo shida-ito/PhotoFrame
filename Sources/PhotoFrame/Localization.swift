@@ -82,6 +82,11 @@ enum L10n {
     static func workspacePrimaryRestoreFailed(_ language: AppLanguage) -> String { language == .japanese ? "現在のワークスペース保存データを読めなかったため、バックアップから復元しました。" : "The current workspace data could not be read, so the app restored from backup." }
     static func workspaceRestoreFailedNoBackup(_ language: AppLanguage) -> String { language == .japanese ? "ワークスペース保存データを復元できず、利用可能なバックアップもありません。このセッションでは自動保存を停止して、これ以上の上書きを防ぎます。" : "The workspace data could not be restored and no backup is available. Auto-save is disabled for this session to prevent overwriting more data." }
     static func workspaceAutoSavePaused(_ language: AppLanguage) -> String { language == .japanese ? "ワークスペース保護のため、このセッションでは自動保存を停止しています。" : "Auto-save is paused for this session to protect the workspace data." }
+    static func resumeAutoSave(_ language: AppLanguage) -> String { language == .japanese ? "自動保存を再開" : "Resume Auto-Save" }
+    static func resetWorkspace(_ language: AppLanguage) -> String { language == .japanese ? "ワークスペースを初期化" : "Reset Workspace" }
+    static func workspaceAutoSaveResumed(_ language: AppLanguage) -> String { language == .japanese ? "現在の状態でワークスペース保存を再開しました。" : "Workspace saving resumed using the current state." }
+    static func resetWorkspaceTitle(_ language: AppLanguage) -> String { language == .japanese ? "ワークスペースを初期化" : "Reset Workspace" }
+    static func resetWorkspaceMessage(_ language: AppLanguage) -> String { language == .japanese ? "保存済みワークスペースとバックアップを削除し、現在のワークスペースを空の状態に戻します。この操作は元に戻せません。" : "Delete the saved workspace and backup, then reset the current workspace to an empty state. This cannot be undone." }
     static func settings(_ language: AppLanguage) -> String { language == .japanese ? "設定" : "Settings" }
     static func editingGroup(_ groupName: String, _ language: AppLanguage) -> String { language == .japanese ? "編集中のグループ: \(groupName)" : "Editing Group: \(groupName)" }
     static func frameWidth(_ language: AppLanguage) -> String { language == .japanese ? "フレーム幅" : "Frame Width" }
@@ -106,6 +111,14 @@ enum L10n {
     static func vertical(_ language: AppLanguage) -> String { language == .japanese ? "上下" : "Vertical" }
     static func horizontal(_ language: AppLanguage) -> String { language == .japanese ? "左右" : "Horizontal" }
     static func frameStyle(_ language: AppLanguage) -> String { language == .japanese ? "フレームスタイル" : "Frame Style" }
+    static func lut(_ language: AppLanguage) -> String { language == .japanese ? "LUT" : "LUT" }
+    static func enableLUT(_ language: AppLanguage) -> String { language == .japanese ? "LUTを適用" : "Enable LUT" }
+    static func chooseLUT(_ language: AppLanguage) -> String { language == .japanese ? "LUTを選択..." : "Choose LUT..." }
+    static func clearLUT(_ language: AppLanguage) -> String { language == .japanese ? "LUTを外す" : "Remove LUT" }
+    static func noLUTSelected(_ language: AppLanguage) -> String { language == .japanese ? "LUT未選択" : "No LUT selected" }
+    static func lutSupportedFormat(_ language: AppLanguage) -> String { language == .japanese ? "対応形式: .cube" : "Supported format: .cube" }
+    static func lutFileMissing(_ language: AppLanguage) -> String { language == .japanese ? "選択したLUTファイルが見つかりません" : "The selected LUT file could not be found" }
+    static func lutIntensity(_ language: AppLanguage) -> String { language == .japanese ? "適用率" : "Intensity" }
     static func color(_ language: AppLanguage) -> String { language == .japanese ? "色" : "Color" }
     static func photoBorder(_ language: AppLanguage) -> String { language == .japanese ? "写真枠を表示" : "Show Photo Border" }
     static func borderColor(_ language: AppLanguage) -> String { language == .japanese ? "枠色" : "Border Color" }
@@ -146,6 +159,13 @@ enum L10n {
     static func presetJSONPlaceholder(_ language: AppLanguage) -> String { language == .japanese ? "ここに preset JSON を貼り付け" : "Paste preset JSON here" }
     static func importPresetTextAction(_ language: AppLanguage) -> String { language == .japanese ? "読み込む" : "Import Text" }
     static func interface(_ language: AppLanguage) -> String { language == .japanese ? "表示" : "Interface" }
+    static func defaultPaths(_ language: AppLanguage) -> String { language == .japanese ? "デフォルトパス" : "Default Paths" }
+    static func audioFolder(_ language: AppLanguage) -> String { language == .japanese ? "音声フォルダ" : "Audio Folder" }
+    static func lutFolder(_ language: AppLanguage) -> String { language == .japanese ? "LUTフォルダ" : "LUT Folder" }
+    static func chooseFolder(_ language: AppLanguage) -> String { language == .japanese ? "フォルダを選択..." : "Choose Folder..." }
+    static func clearFolder(_ language: AppLanguage) -> String { language == .japanese ? "クリア" : "Clear" }
+    static func noFolderSelected(_ language: AppLanguage) -> String { language == .japanese ? "未設定" : "Not set" }
+    static func defaultPathHint(_ language: AppLanguage) -> String { language == .japanese ? "ここで設定したフォルダから音声ファイルとLUTファイルの選択ダイアログを開きます。" : "Audio and LUT pickers open from these folders by default." }
     static func displayLanguage(_ language: AppLanguage) -> String { language == .japanese ? "表示言語" : "Display Language" }
     static func colorMode(_ language: AppLanguage) -> String { language == .japanese ? "カラーモード" : "Color Mode" }
     static func fontPickerMode(_ language: AppLanguage) -> String { language == .japanese ? "フォント選択表示" : "Font Picker Mode" }

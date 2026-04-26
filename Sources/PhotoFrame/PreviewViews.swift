@@ -65,6 +65,8 @@ struct LivePreviewCanvas: View {
 struct LiveVideoPreviewCanvas: View {
     let backgroundImage: NSImage
     let videoURL: URL
+    let videoComposition: AVVideoComposition?
+    let compositionSignature: String
     let imageRect: CGRect
     let textLayers: [ImageProcessor.PreviewTextLayer]
 
@@ -98,7 +100,11 @@ struct LiveVideoPreviewCanvas: View {
                     .resizable()
                     .frame(width: fittedSize.width, height: fittedSize.height)
 
-                LoopingVideoPlayerView(url: videoURL)
+                LoopingVideoPlayerView(
+                    url: videoURL,
+                    videoComposition: videoComposition,
+                    compositionSignature: compositionSignature
+                )
                     .frame(width: videoFrame.width, height: videoFrame.height)
                     .clipShape(Rectangle())
                     .offset(x: videoFrame.minX, y: videoFrame.minY)
@@ -137,6 +143,8 @@ struct LiveVideoPreviewCanvas: View {
 
 struct LoopingVideoPlayerView: NSViewRepresentable {
     let url: URL
+    var videoComposition: AVVideoComposition? = nil
+    var compositionSignature: String = ""
     var isMuted: Bool = true
     var loops: Bool = true
     var onPlaybackEnded: (() -> Void)? = nil
@@ -153,6 +161,8 @@ struct LoopingVideoPlayerView: NSViewRepresentable {
         context.coordinator.attach(
             to: view,
             url: url,
+            videoComposition: videoComposition,
+            compositionSignature: compositionSignature,
             isMuted: isMuted,
             loops: loops,
             onPlaybackEnded: onPlaybackEnded
@@ -164,6 +174,8 @@ struct LoopingVideoPlayerView: NSViewRepresentable {
         context.coordinator.attach(
             to: nsView,
             url: url,
+            videoComposition: videoComposition,
+            compositionSignature: compositionSignature,
             isMuted: isMuted,
             loops: loops,
             onPlaybackEnded: onPlaybackEnded
@@ -178,6 +190,7 @@ struct LoopingVideoPlayerView: NSViewRepresentable {
     @MainActor
     final class Coordinator {
         private var currentURL: URL?
+        private var currentCompositionSignature = ""
         private var currentMuted = true
         private var currentLoops = true
         private var player: AVPlayer?
@@ -188,13 +201,19 @@ struct LoopingVideoPlayerView: NSViewRepresentable {
         func attach(
             to view: AVPlayerView,
             url: URL,
+            videoComposition: AVVideoComposition?,
+            compositionSignature: String,
             isMuted: Bool,
             loops: Bool,
             onPlaybackEnded: (() -> Void)?
         ) {
             playbackEndedHandler = onPlaybackEnded
 
-            guard currentURL != url || player == nil || currentMuted != isMuted || currentLoops != loops else {
+            guard currentURL != url ||
+                    player == nil ||
+                    currentMuted != isMuted ||
+                    currentLoops != loops ||
+                    currentCompositionSignature != compositionSignature else {
                 view.player = player
                 return
             }
@@ -202,6 +221,7 @@ struct LoopingVideoPlayerView: NSViewRepresentable {
             stop()
 
             let playerItem = AVPlayerItem(url: url)
+            playerItem.videoComposition = videoComposition
             let player: AVPlayer
             let looper: AVPlayerLooper?
 
@@ -231,6 +251,7 @@ struct LoopingVideoPlayerView: NSViewRepresentable {
             player.isMuted = isMuted
 
             self.currentURL = url
+            self.currentCompositionSignature = compositionSignature
             self.currentMuted = isMuted
             self.currentLoops = loops
             self.player = player
@@ -249,6 +270,7 @@ struct LoopingVideoPlayerView: NSViewRepresentable {
                 self.playbackEndedObserver = nil
             }
             currentURL = nil
+            currentCompositionSignature = ""
             currentMuted = true
             currentLoops = true
             playbackEndedHandler = nil
