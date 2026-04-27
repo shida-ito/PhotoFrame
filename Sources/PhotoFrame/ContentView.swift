@@ -943,7 +943,7 @@ struct ContentView: View {
                             onRemove: { removePhotoSelection(startingWith: item) },
                             dragProvider: { makeDragProvider(for: item) }
                         )
-                        .onDrop(of: [.text], isTargeted: nil) { providers in
+                        .onDrop(of: [.text, .fileURL], isTargeted: nil) { providers in
                             handlePhotoRowDrop(
                                 providers: providers,
                                 targetGroupID: group.id,
@@ -1715,8 +1715,9 @@ struct ContentView: View {
         targetGroupID: UUID,
         targetItemID: UUID
     ) -> Bool {
+        let handledExternalDrop = handleExternalDrop(providers: providers, targetGroupID: targetGroupID)
         let supportedProviders = providers.filter { $0.canLoadObject(ofClass: NSString.self) }
-        guard !supportedProviders.isEmpty else { return false }
+        guard !supportedProviders.isEmpty else { return handledExternalDrop }
 
         for provider in supportedProviders {
             provider.loadObject(ofClass: NSString.self) { object, _ in
