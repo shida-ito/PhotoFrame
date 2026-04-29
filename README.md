@@ -106,6 +106,7 @@ If you want richer video metadata such as `Lens`, `ISO`, `Focal`, `FStop`, or `S
 - **Import / Export / Paste Presets**: Share presets as readable JSON files, import them from disk, or paste preset text directly.
 - **Overwrite Preset**: Use the `...` menu on a preset row to replace an existing preset with the current settings.
 - **Rename Preset**: Open the `...` menu on a preset row and choose **Rename Preset...**.
+- **Rename Dialog Behavior**: Preset and group rename dialogs reopen with the current name prefilled, so repeated edits do not start from an empty field.
 - **Delete Preset**: Remove a single preset or clear them all from the same menu.
 - **Group Settings Export / Import**: Use **File** menu commands to export or import all group settings together.
 - **Preferences**: Open **PhotoFrame > Settings...** to:

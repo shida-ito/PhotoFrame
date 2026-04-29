@@ -90,11 +90,13 @@ struct ContentView: View {
     @State private var showingRenamePresetAlert = false
     @State private var presetRenameTargetID: UUID? = nil
     @State private var renamePresetName: String = ""
+    @State private var renamePresetAlertID = UUID()
     @State private var showingAddGroupAlert = false
     @State private var newGroupName: String = ""
     @State private var showingRenameGroupAlert = false
     @State private var groupRenameTargetID: UUID? = nil
     @State private var renameGroupName: String = ""
+    @State private var renameGroupAlertID = UUID()
     @State private var activeExportScope: ExportScope? = nil
     @State private var presetPreviewOriginalState: FrameSettingsState? = nil
     @State private var presetPreviewID: UUID? = nil
@@ -617,6 +619,7 @@ struct ContentView: View {
         } message: { Text(L10n.newGroupMessage(language)) }
         .alert(L10n.renameGroupTitle(language), isPresented: $showingRenameGroupAlert) {
             TextField(L10n.groupName(language), text: $renameGroupName)
+                .id(renameGroupAlertID)
             Button(L10n.rename(language)) { renameGroup() }
             Button(L10n.cancel(language), role: .cancel) { resetRenameGroupState() }
         } message: { Text(L10n.renameGroupMessage(language)) }
@@ -1162,6 +1165,7 @@ struct ContentView: View {
         } message: { Text(L10n.savePresetMessage(language)) }
         .alert(L10n.renamePresetTitle(language), isPresented: $showingRenamePresetAlert) {
             TextField(L10n.presetName(language), text: $renamePresetName)
+                .id(renamePresetAlertID)
             Button(L10n.rename(language)) { renamePreset() }
             Button(L10n.cancel(language), role: .cancel) { resetRenamePresetState() }
         } message: { Text(L10n.renamePresetMessage(language)) }
@@ -1179,6 +1183,7 @@ struct ContentView: View {
     private func beginRenamingPreset(_ preset: Preset) {
         presetRenameTargetID = preset.id
         renamePresetName = preset.name
+        renamePresetAlertID = UUID()
         showingRenamePresetAlert = true
     }
 
@@ -1507,6 +1512,7 @@ struct ContentView: View {
     private func beginRenamingGroup(_ group: PhotoGroup) {
         groupRenameTargetID = group.id
         renameGroupName = group.displayName(language)
+        renameGroupAlertID = UUID()
         showingRenameGroupAlert = true
     }
 
