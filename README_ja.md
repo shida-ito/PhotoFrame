@@ -39,6 +39,7 @@ macOS向けのスタイリッシュでミニマルな写真フレーム作成ア
 
 - macOS 14.0以上
 - Xcode Command Line Tools (`swift build`に必要)
+- `exiftool`（任意。動画のメーカー固有メタデータをより多く読み取る場合）
 
 ### ビルドとインストール
 
@@ -49,6 +50,8 @@ bash build_app.sh
 ```
 
 完了すると、プロジェクトのルートディレクトリに `PhotoFrame.app` が作成されます。
+
+動画の `Lens`、`ISO`、`Focal`、`FStop`、`Shutter` などのメタデータをより多く表示したい場合は、あわせて `exiftool` をインストールしてください。`exiftool` が利用可能な環境では、標準の QuickTime/MP4 メタデータに加えて、カメラメーカー固有の動画メタデータも補助的に読み取ります。`exiftool` がない場合でもアプリは動作しますが、動画では表示できるタグが少なくなることがあります。
 
 ## 📖 操作マニュアル
 
@@ -93,6 +96,7 @@ bash build_app.sh
     - 目のアイコンで表示切り替え、不要なら削除も可能です。
 - **使用できるタグ**: `{Camera}`、`{Lens}`、`{Focal}`、`{FStop}`、`{Shutter}`、`{ISO}`、`{Date}`、`{Year}`、`{Month}`、`{Day}`。
 - **現在の写真のタグ一覧**: Text Layers セクションで、プレビュー中の写真に実際に入っている metadata タグ名を確認できます。
+- **動画メタデータについて**: 動画はファイルによって入っているタグ量の差が大きく、標準の QuickTime/MP4 タグしか持たないものもあります。`exiftool` が使える環境では、対応カメラの動画から `LensModel`、`LensID`、`WhiteBalance`、`FocusMode`、`FocusDistance`、`AFAreaMode`、`PrimaryAFPoint`、`PictureControlName`、`ShutterCount` などの追加タグも表示できる場合があります。
 
 ### 4. プリセットとPreferences
 - **プリセット一覧**: 保存済みプリセットはプリセットポップオーバー内で A-Z 順に表示されます。

@@ -2,6 +2,7 @@ import AppKit
 @preconcurrency import AVFoundation
 import CoreImage
 import CoreGraphics
+import Foundation
 
 struct VideoProcessor {
 
@@ -530,7 +531,250 @@ struct VideoProcessor {
             }
         }
 
+        if let exiftoolMetadata = await exiftoolMetadata(for: url) {
+            merge(exiftoolMetadata, into: &info)
+        }
+
         return info
+    }
+
+    private static func exiftoolMetadata(for url: URL) async -> [String: String]? {
+        await Task.detached(priority: .utility) {
+            guard let exiftoolURL = exiftoolExecutableURL() else {
+                return nil
+            }
+
+            let process = Process()
+            process.executableURL = exiftoolURL
+            process.arguments = [
+                "-j",
+                "-a",
+                "-G1",
+                "-s",
+                "-u",
+                "-ee",
+                url.path
+            ]
+
+            let outputPipe = Pipe()
+            let errorPipe = Pipe()
+            process.standardOutput = outputPipe
+            process.standardError = errorPipe
+
+            do {
+                try process.run()
+            } catch {
+                return nil
+            }
+
+            process.waitUntilExit()
+
+            guard process.terminationStatus == 0 else {
+                return nil
+            }
+
+            let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
+            guard !data.isEmpty,
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+                  let record = object.first else {
+                return nil
+            }
+
+            var fields: [String: String] = [:]
+
+            for key in record.keys.sorted() {
+                guard let rawValue = record[key],
+                      let value = exiftoolString(from: rawValue),
+                      shouldIncludeExiftoolTag(key: key, value: value) else {
+                    continue
+                }
+
+                let displayName = displayTagName(forExiftoolKey: key)
+
+                if let existingValue = fields[displayName] {
+                    if existingValue == value {
+                        continue
+                    }
+
+                    fields[key.replacingOccurrences(of: ":", with: ".")] = value
+                    continue
+                }
+
+                fields[displayName] = value
+            }
+
+            return fields.isEmpty ? nil : fields
+        }.value
+    }
+
+    private static func exiftoolExecutableURL() -> URL? {
+        let candidates = [
+            "/opt/homebrew/bin/exiftool",
+            "/usr/local/bin/exiftool",
+            "/usr/bin/exiftool"
+        ]
+
+        for path in candidates where FileManager.default.isExecutableFile(atPath: path) {
+            return URL(fileURLWithPath: path)
+        }
+
+        if let path = ProcessInfo.processInfo.environment["PATH"]?
+            .split(separator: ":")
+            .map(String.init)
+            .map({ "\($0)/exiftool" })
+            .first(where: { FileManager.default.isExecutableFile(atPath: $0) }) {
+            return URL(fileURLWithPath: path)
+        }
+
+        return nil
+    }
+
+    private static func displayTagName(forExiftoolKey key: String) -> String {
+        key.split(separator: ":", maxSplits: 1).last.map(String.init) ?? key
+    }
+
+    private static func shouldIncludeExiftoolTag(key: String, value: String) -> Bool {
+        if key == "SourceFile" || key.hasPrefix("ExifTool:") {
+            return false
+        }
+
+        let excludedPrefixes = [
+            "Track1:",
+            "Track2:"
+        ]
+        if excludedPrefixes.contains(where: { key.hasPrefix($0) }) {
+            return false
+        }
+
+        let excludedKeyFragments = [
+            "Nikon_NCTG_",
+            "Unknown_",
+            "ThumbnailImage",
+            "PreviewImage",
+            "PictureControlData",
+            "Free",
+            "MediaData",
+            "ChunkOffset",
+            "SampleSizes",
+            "SampleToChunk",
+            "CompositionTimeToSample",
+            "SyncSampleTable",
+            "AVCConfiguration",
+            "MatrixStructure",
+            "OpColor"
+        ]
+        if excludedKeyFragments.contains(where: { key.contains($0) }) {
+            return false
+        }
+
+        if value.hasPrefix("(Binary data") || value.contains("use -b option to extract") {
+            return false
+        }
+
+        if value.count > 160 {
+            return false
+        }
+
+        if value.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) && $0 != "\n" && $0 != "\t" }) {
+            return false
+        }
+
+        return true
+    }
+
+    private static func exiftoolString(from value: Any) -> String? {
+        let stringValue: String?
+
+        switch value {
+        case let string as String:
+            stringValue = string
+        case let number as NSNumber:
+            stringValue = number.stringValue
+        case let values as [Any]:
+            let parts = values.compactMap { exiftoolString(from: $0) }
+            stringValue = parts.isEmpty ? nil : parts.joined(separator: ", ")
+        default:
+            stringValue = nil
+        }
+
+        guard let trimmed = stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else {
+            return nil
+        }
+
+        return trimmed
+    }
+
+    private static func merge(_ metadata: [String: String], into info: inout ExifInfo) {
+        for (key, value) in metadata {
+            info.metadataFields[key] = value
+        }
+
+        if info.cameraMake == nil {
+            info.cameraMake = metadata["Make"]
+        }
+
+        if info.cameraModel == nil {
+            info.cameraModel = metadata["Model"]
+        }
+
+        if info.lensModel == nil {
+            info.lensModel = metadata["LensModel"] ?? metadata["LensID"] ?? metadata["LensInfo"] ?? metadata["Lens"]
+        }
+
+        if info.focalLength == nil {
+            info.focalLength = normalizedNumericMetadata(metadata["FocalLength"], suffix: "mm")
+        }
+
+        if info.fNumber == nil {
+            info.fNumber = normalizedNumericMetadata(metadata["FNumber"], suffix: nil)
+        }
+
+        if info.exposureTime == nil {
+            info.exposureTime = metadata["ExposureTime"]
+        }
+
+        if info.iso == nil {
+            info.iso = normalizedNumericMetadata(metadata["ISO"], suffix: nil)
+        }
+
+        if info.dateTaken == nil {
+            info.dateTaken = formattedExiftoolDate(
+                metadata["DateTimeOriginal"] ?? metadata["CreateDate"]
+            )
+        }
+    }
+
+    private static func normalizedNumericMetadata(_ value: String?, suffix: String?) -> String? {
+        guard var result = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !result.isEmpty else {
+            return nil
+        }
+
+        if let suffix {
+            result = result.replacingOccurrences(of: " \(suffix)", with: "")
+            result = result.replacingOccurrences(of: suffix, with: "")
+        }
+
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func formattedExiftoolDate(_ value: String?) -> String? {
+        guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !value.isEmpty else {
+            return nil
+        }
+
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy:MM:dd HH:mm:ss"
+
+        guard let date = formatter.date(from: value) else {
+            return nil
+        }
+
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
     }
 
     private static func metadataString(from item: AVMetadataItem) async -> String? {

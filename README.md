@@ -40,6 +40,7 @@ Stylish and minimal photo framing application for macOS. Add elegant borders and
 
 - macOS 14.0+
 - Xcode Command Line Tools (for `swift build`)
+- `exiftool` (optional, for richer manufacturer-specific video metadata)
 
 ### Build and Install
 
@@ -50,6 +51,8 @@ bash build_app.sh
 ```
 
 Once complete, you will find `PhotoFrame.app` in the project root.
+
+If you want richer video metadata such as `Lens`, `ISO`, `Focal`, `FStop`, or `Shutter`, install `exiftool` as well. When `exiftool` is available, the app supplements standard QuickTime/MP4 metadata with additional manufacturer-specific video metadata. The app still works without it, but fewer metadata tags may be visible for videos.
 
 ## 📖 Manual
 
@@ -94,6 +97,7 @@ Once complete, you will find `PhotoFrame.app` in the project root.
     - Toggle visibility with the eye icon, or remove a layer entirely.
 - **Available Tags**: `{Camera}`, `{Lens}`, `{Focal}`, `{FStop}`, `{Shutter}`, `{ISO}`, `{Date}`, `{Year}`, `{Month}`, `{Day}`.
 - **Current Photo Tags**: The Text Layers section can show the actual metadata tag names found in the current preview photo.
+- **Video Metadata Note**: Video files vary widely in how much metadata they contain, and some only expose standard QuickTime/MP4 tags. When `exiftool` is available, supported camera files may also expose extra tags such as `LensModel`, `LensID`, `WhiteBalance`, `FocusMode`, `FocusDistance`, `AFAreaMode`, `PrimaryAFPoint`, `PictureControlName`, and `ShutterCount`.
 
 ### 4. Presets & Preferences
 - **Preset List**: Saved presets are shown in alphabetical order in the preset popover.
